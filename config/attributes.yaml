@@ -1,0 +1,30 @@
+# EVE Online Dogma Attribute ID Mappings
+# These IDs are used to identify specific module attributes in the game data
+
+attributes:
+  # Damage & DPS
+  damage: 64                # damageMultiplier - Turret/missile damage modifier
+  rof: 204                  # speedMultiplier - Rate of Fire modifier
+  missile_damage: 213       # missileDamageMultiplier - BCS missile damage
+  dda_damage: 1255          # droneDamageBonus - Drone Damage Amplifier bonus
+
+  # Fitting
+  cpu: 50                   # cpu - CPU usage
+  power: 30                 # power - Powergrid usage
+
+  # Capacitor
+  cap: 6                    # capacitorNeed - Capacitor usage per cycle
+  cap_capacity: 67          # capacitorBonus - Cap battery capacity bonus
+
+  # Range & Speed
+  range: 54                 # maxRange - Module optimal range
+  velocity_bonus: 20        # speedFactor - Web velocity reduction / AB speed bonus
+
+  # Tank
+  shield_boost: 68          # shieldBonus - Shield Booster repair amount
+  shield_cap: 72            # shieldCapacity - Shield extender HP bonus
+  armor_hp: 1159            # armorHPMultiplier - Armor plate HP
+  duration: 73              # duration - Cycle time in ms
+
+  # Other
+  mass: 796                 # massAddition - Mass added to ship

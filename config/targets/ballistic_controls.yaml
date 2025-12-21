@@ -1,0 +1,137 @@
+# Ballistic Control System Roll Targets
+
+targets:
+  - key: bcs2_decayed
+    name: "Ballistic Control System II + Decayed"
+    base_type_id: 22291
+    base_name: "Ballistic Control System II"
+    muta_type_id: 49739
+    muta_name: "Decayed Ballistic Control System Mutaplasmid"
+    module_type: bcs
+    base_stats:
+      missile_damage: 1.1
+      rof: 0.895
+      cpu: 40
+    muta_ranges:
+      - attr: missile_damage
+        min_mult: 0.995
+        max_mult: 1.008
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.985
+        max_mult: 1.01
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.95
+        max_mult: 1.25
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"
+
+  - key: bcs2_gravid
+    name: "Ballistic Control System II + Gravid"
+    base_type_id: 22291
+    base_name: "Ballistic Control System II"
+    muta_type_id: 49740
+    muta_name: "Gravid Ballistic Control System Mutaplasmid"
+    module_type: bcs
+    base_stats:
+      missile_damage: 1.1
+      rof: 0.895
+      cpu: 40
+    muta_ranges:
+      - attr: missile_damage
+        min_mult: 0.989
+        max_mult: 1.014
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.98
+        max_mult: 1.015
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"
+
+  - key: cn_bcs_unstable
+    name: "Caldari Navy BCS + Unstable"
+    base_type_id: 15681
+    base_name: "Caldari Navy Ballistic Control System"
+    muta_type_id: 49741
+    muta_name: "Unstable Ballistic Control System Mutaplasmid"
+    module_type: bcs
+    base_stats:
+      missile_damage: 1.12
+      rof: 0.89
+      cpu: 24
+    muta_ranges:
+      - attr: missile_damage
+        min_mult: 0.98
+        max_mult: 1.02
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.975
+        max_mult: 1.025
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"
+
+  - key: dom_bcs_gravid
+    name: "Domination BCS + Gravid"
+    base_type_id: 13935
+    base_name: "Domination Ballistic Control System"
+    muta_type_id: 49740
+    muta_name: "Gravid Ballistic Control System Mutaplasmid"
+    module_type: bcs
+    base_stats:
+      missile_damage: 1.12
+      rof: 0.89
+      cpu: 24
+    muta_ranges:
+      - attr: missile_damage
+        min_mult: 0.989
+        max_mult: 1.014
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.98
+        max_mult: 1.015
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"
+
+  - key: dom_bcs_unstable
+    name: "Domination BCS + Unstable"
+    base_type_id: 13935
+    base_name: "Domination Ballistic Control System"
+    muta_type_id: 49741
+    muta_name: "Unstable Ballistic Control System Mutaplasmid"
+    module_type: bcs
+    base_stats:
+      missile_damage: 1.12
+      rof: 0.89
+      cpu: 24
+    muta_ranges:
+      - attr: missile_damage
+        min_mult: 0.98
+        max_mult: 1.02
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.975
+        max_mult: 1.025
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"

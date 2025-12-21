@@ -1,0 +1,34 @@
+# Shield Booster Roll Targets
+
+targets:
+  - key: pith_xlsb_unstable
+    name: "Pith X-Type XL Shield Booster + Unstable"
+    base_type_id: 19208
+    base_name: "Pith X-Type X-Large Shield Booster"
+    muta_type_id: 47791
+    muta_name: "Unstable X-Large Shield Booster Mutaplasmid"
+    module_type: shield_booster
+    base_stats:
+      shield_boost: 924
+      duration: 4000
+      cpu: 238
+      cap: 400
+    muta_ranges:
+      - attr: shield_boost
+        min_mult: 0.8
+        max_mult: 1.2
+        high_is_good: true
+      - attr: duration
+        min_mult: 0.9
+        max_mult: 1.1
+        high_is_good: false
+      - attr: cpu
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+      - attr: cap
+        min_mult: 0.6
+        max_mult: 1.4
+        high_is_good: false
+    primary_desc: "Shield boost/s > base"
+    secondary_desc: "Cap not in worst 10%"

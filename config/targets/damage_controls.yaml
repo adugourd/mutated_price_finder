@@ -1,0 +1,19 @@
+# Damage Control Roll Targets
+
+targets:
+  - key: dc2_decayed
+    name: "Damage Control II + Decayed"
+    base_type_id: 2048
+    base_name: "Damage Control II"
+    muta_type_id: 52224
+    muta_name: "Decayed Damage Control Mutaplasmid"
+    module_type: damage_control
+    base_stats:
+      cpu: 30
+    muta_ranges:
+      - attr: cpu
+        min_mult: 0.95
+        max_mult: 1.25
+        high_is_good: false
+    primary_desc: "Hull resist > base"
+    secondary_desc: "CPU not in worst 10%"

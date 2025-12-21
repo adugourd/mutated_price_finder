@@ -17,579 +17,72 @@ import tarfile
 import argparse
 from pathlib import Path
 from datetime import datetime
-from dataclasses import dataclass, field
-from typing import Callable
 
 import requests
 import pandas as pd
 import numpy as np
 from scipy import stats
 
+# Import configuration from YAML files
+from src.config.loader import (
+    load_all_targets,
+    load_constants,
+    load_attributes,
+    MutaplasmidRange,
+    RollTarget,
+)
+
+# Load constants from config
+_constants = load_constants()
+_attributes = load_attributes()
+
 # Cache directory
 CACHE_DIR = Path(__file__).parent / ".cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
 # Fuzzwork market API (Jita = The Forge region 10000002)
-FUZZWORK_MARKET_URL = "https://market.fuzzwork.co.uk/aggregates/"
-JITA_REGION = 10000002
+FUZZWORK_MARKET_URL = _constants['api']['fuzzwork_market_url']
+JITA_REGION = _constants['api']['jita_region_id']
 
 # EVE Ref contracts
-EVEREF_CONTRACTS_URL = "https://data.everef.net/public-contracts/public-contracts-latest.v2.tar.bz2"
+EVEREF_CONTRACTS_URL = _constants['api']['everef_contracts_url']
 
 # Number of Monte Carlo samples
-NUM_SAMPLES = 100000
+NUM_SAMPLES = _constants['simulation']['num_samples']
+
+# Attribute IDs (loaded from config for backward compatibility)
+ATTR_DAMAGE = _attributes['damage']
+ATTR_ROF = _attributes['rof']
+ATTR_CPU = _attributes['cpu']
+ATTR_VELOCITY_BONUS = _attributes['velocity_bonus']
+ATTR_CAP = _attributes['cap']
+ATTR_RANGE = _attributes['range']
+ATTR_SHIELD_BOOST = _attributes['shield_boost']
+ATTR_DURATION = _attributes['duration']
+ATTR_ARMOR_HP = _attributes['armor_hp']
+ATTR_MASS = _attributes['mass']
+ATTR_POWER = _attributes['power']
+ATTR_DDA_DAMAGE = _attributes['dda_damage']
+ATTR_SHIELD_CAP = _attributes['shield_cap']
+ATTR_CAP_CAPACITY = _attributes['cap_capacity']
+ATTR_MISSILE_DAMAGE = _attributes['missile_damage']
 
 
-@dataclass
-class MutaplasmidRange:
-    """Roll range for a mutaplasmid attribute."""
-    attr_id: int
-    min_mult: float
-    max_mult: float
-    high_is_good: bool = True  # False for things like CPU where lower is better
+# Load roll targets from YAML configuration files
+# Configuration files are in config/targets/*.yaml
+ROLL_TARGETS = load_all_targets()
 
 
-@dataclass
-class RollTarget:
-    """Configuration for a roll target with success criteria."""
-    name: str
-    base_type_id: int
-    base_name: str
-    muta_type_id: int
-    muta_name: str
-    # Base stats (before mutation)
-    base_stats: dict = field(default_factory=dict)
-    # Mutaplasmid attribute ranges
-    muta_ranges: list = field(default_factory=list)
-    # Primary stat success function: returns True if roll is "good enough"
-    primary_success_func: Callable = None
-    # Secondary stat catastrophe function: returns True if roll is catastrophic
-    secondary_catastrophe_func: Callable = None
-    # Description of success criteria
-    primary_desc: str = ""
-    secondary_desc: str = ""
-    # Module type for routing to appropriate success rate calculator
-    module_type: str = "dps"  # dps, web, shield_booster, armor_plate, cap_battery, afterburner, warp_disruptor, dda, shield_extender, damage_control
+# Legacy compatibility: Also provide access to individual targets
+def _get_roll_target(key: str) -> RollTarget:
+    """Get a specific roll target by key (for backward compatibility)."""
+    return ROLL_TARGETS[key]
 
 
-# Attribute IDs
-ATTR_DAMAGE = 64
-ATTR_ROF = 204
-ATTR_CPU = 50
-ATTR_VELOCITY_BONUS = 20  # Web velocity reduction / AB speed bonus
-ATTR_CAP = 6
-ATTR_RANGE = 54
-ATTR_SHIELD_BOOST = 68
-ATTR_DURATION = 73
-ATTR_ARMOR_HP = 1159
-ATTR_MASS = 796
-ATTR_POWER = 30
-ATTR_DDA_DAMAGE = 1255  # Drone Damage Amplifier damage bonus
-ATTR_SHIELD_CAP = 72  # Shield extender HP bonus
-ATTR_CAP_CAPACITY = 67  # Cap battery capacity
-ATTR_MISSILE_DAMAGE = 213  # BCS missile damage
+# NOTE: The following ROLL_TARGETS dict has been moved to config/targets/*.yaml
+# To add new targets, edit the YAML files instead of this code.
+# See config/targets/ for examples.
 
-
-# Top 30 items by contract turnover (60 days data)
-# Data from contract_turnover.py analysis + ESI base stats + Hoboleaks mutaplasmid ranges
-ROLL_TARGETS = {
-    # === SHIELD EXTENDERS ===
-    'cn_lse_gravid': RollTarget(
-        name='Caldari Navy LSE + Gravid',
-        base_type_id=31930,
-        base_name='Caldari Navy Large Shield Extender',
-        muta_type_id=47807,
-        muta_name='Gravid Large Shield Extender Mutaplasmid',
-        base_stats={ATTR_SHIELD_CAP: 2750, ATTR_CPU: 35, ATTR_POWER: 150},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_SHIELD_CAP, 0.9, 1.2),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_POWER, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="Shield HP > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="shield_extender",
-    ),
-    'rf_lse_gravid': RollTarget(
-        name='Republic Fleet LSE + Gravid',
-        base_type_id=31932,
-        base_name='Republic Fleet Large Shield Extender',
-        muta_type_id=47807,
-        muta_name='Gravid Large Shield Extender Mutaplasmid',
-        base_stats={ATTR_SHIELD_CAP: 2750, ATTR_CPU: 40, ATTR_POWER: 145},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_SHIELD_CAP, 0.9, 1.2),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_POWER, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="Shield HP > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="shield_extender",
-    ),
-
-    # === HEAT SINKS ===
-    'in_heatsink_unstable': RollTarget(
-        name='Imperial Navy Heat Sink + Unstable',
-        base_type_id=15810,
-        base_name='Imperial Navy Heat Sink',
-        muta_type_id=49729,
-        muta_name='Unstable Heat Sink Mutaplasmid',
-        base_stats={ATTR_DAMAGE: 1.12, ATTR_ROF: 0.89, ATTR_CPU: 20},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DAMAGE, 0.98, 1.02),
-            MutaplasmidRange(ATTR_ROF, 0.975, 1.025),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dps",
-    ),
-    'hs2_gravid': RollTarget(
-        name='Heat Sink II + Gravid',
-        base_type_id=2364,
-        base_name='Heat Sink II',
-        muta_type_id=49728,
-        muta_name='Gravid Heat Sink Mutaplasmid',
-        base_stats={ATTR_DAMAGE: 1.1, ATTR_ROF: 0.895, ATTR_CPU: 30},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DAMAGE, 0.989, 1.014),
-            MutaplasmidRange(ATTR_ROF, 0.98, 1.015),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dps",
-    ),
-    'hs2_decayed': RollTarget(
-        name='Heat Sink II + Decayed',
-        base_type_id=2364,
-        base_name='Heat Sink II',
-        muta_type_id=49727,
-        muta_name='Decayed Heat Sink Mutaplasmid',
-        base_stats={ATTR_DAMAGE: 1.1, ATTR_ROF: 0.895, ATTR_CPU: 30},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DAMAGE, 0.995, 1.008),
-            MutaplasmidRange(ATTR_ROF, 0.985, 1.01),
-            MutaplasmidRange(ATTR_CPU, 0.95, 1.25, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dps",
-    ),
-
-    # === MAG STABS ===
-    'fn_magstab_unstable': RollTarget(
-        name='Fed Navy Mag Stab + Unstable',
-        base_type_id=15895,
-        base_name='Federation Navy Magnetic Field Stabilizer',
-        muta_type_id=49725,
-        muta_name='Unstable Magnetic Field Stabilizer Mutaplasmid',
-        base_stats={ATTR_DAMAGE: 1.12, ATTR_ROF: 0.89, ATTR_CPU: 20},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DAMAGE, 0.98, 1.02),
-            MutaplasmidRange(ATTR_ROF, 0.975, 1.025),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dps",
-    ),
-
-    # === STASIS WEBIFIERS ===
-    'fn_web_gravid': RollTarget(
-        name='Fed Navy Web + Gravid',
-        base_type_id=17559,
-        base_name='Federation Navy Stasis Webifier',
-        muta_type_id=47701,
-        muta_name='Gravid Stasis Webifier Mutaplasmid',
-        base_stats={ATTR_VELOCITY_BONUS: -60, ATTR_RANGE: 14000, ATTR_CPU: 25, ATTR_CAP: 5},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_VELOCITY_BONUS, 0.95, 1.07),
-            MutaplasmidRange(ATTR_RANGE, 0.9, 1.15),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_CAP, 1.0, 2.0, high_is_good=False),
-        ],
-        primary_desc="Web strength > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="web",
-    ),
-    'fn_web_unstable': RollTarget(
-        name='Fed Navy Web + Unstable',
-        base_type_id=17559,
-        base_name='Federation Navy Stasis Webifier',
-        muta_type_id=47700,
-        muta_name='Unstable Stasis Webifier Mutaplasmid',
-        base_stats={ATTR_VELOCITY_BONUS: -60, ATTR_RANGE: 14000, ATTR_CPU: 25, ATTR_CAP: 5},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_VELOCITY_BONUS, 0.9, 1.1),
-            MutaplasmidRange(ATTR_RANGE, 0.8, 1.2),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-            MutaplasmidRange(ATTR_CAP, 0.9, 2.5, high_is_good=False),
-        ],
-        primary_desc="Web strength > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="web",
-    ),
-
-    # === ENTROPIC RADIATION SINKS ===
-    'ers2_gravid': RollTarget(
-        name='Entropic Sink II + Gravid',
-        base_type_id=47911,
-        base_name='Entropic Radiation Sink II',
-        muta_type_id=49736,
-        muta_name='Gravid Entropic Radiation Sink Mutaplasmid',
-        base_stats={ATTR_DAMAGE: 1.13, ATTR_ROF: 0.94, ATTR_CPU: 30},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DAMAGE, 0.989, 1.014),
-            MutaplasmidRange(ATTR_ROF, 0.98, 1.015),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dps",
-    ),
-    'ers2_unstable': RollTarget(
-        name='Entropic Sink II + Unstable',
-        base_type_id=47911,
-        base_name='Entropic Radiation Sink II',
-        muta_type_id=49737,
-        muta_name='Unstable Entropic Radiation Sink Mutaplasmid',
-        base_stats={ATTR_DAMAGE: 1.13, ATTR_ROF: 0.94, ATTR_CPU: 30},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DAMAGE, 0.98, 1.02),
-            MutaplasmidRange(ATTR_ROF, 0.975, 1.025),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dps",
-    ),
-    'ers2_decayed': RollTarget(
-        name='Entropic Sink II + Decayed',
-        base_type_id=47911,
-        base_name='Entropic Radiation Sink II',
-        muta_type_id=49735,
-        muta_name='Decayed Entropic Radiation Sink Mutaplasmid',
-        base_stats={ATTR_DAMAGE: 1.13, ATTR_ROF: 0.94, ATTR_CPU: 30},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DAMAGE, 0.995, 1.008),
-            MutaplasmidRange(ATTR_ROF, 0.985, 1.01),
-            MutaplasmidRange(ATTR_CPU, 0.95, 1.25, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dps",
-    ),
-
-    # === ARMOR PLATES ===
-    'in_plate_gravid': RollTarget(
-        name='Imperial Navy 1600mm Plate + Gravid',
-        base_type_id=31900,
-        base_name='Imperial Navy 1600mm Steel Plates',
-        muta_type_id=47819,
-        muta_name='Gravid Large Armor Plate Mutaplasmid',
-        base_stats={ATTR_ARMOR_HP: 5250, ATTR_MASS: 3000000, ATTR_CPU: 27, ATTR_POWER: 575},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_ARMOR_HP, 0.9, 1.2),
-            MutaplasmidRange(ATTR_MASS, 0.8, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_POWER, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="Armor HP > base",
-        secondary_desc="Mass not in worst 10%",
-        module_type="armor_plate",
-    ),
-    'in_plate_unstable': RollTarget(
-        name='Imperial Navy 1600mm Plate + Unstable',
-        base_type_id=31900,
-        base_name='Imperial Navy 1600mm Steel Plates',
-        muta_type_id=47818,
-        muta_name='Unstable Large Armor Plate Mutaplasmid',
-        base_stats={ATTR_ARMOR_HP: 5250, ATTR_MASS: 3000000, ATTR_CPU: 27, ATTR_POWER: 575},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_ARMOR_HP, 0.7, 1.3),
-            MutaplasmidRange(ATTR_MASS, 0.6, 1.4, high_is_good=False),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-            MutaplasmidRange(ATTR_POWER, 0.8, 1.5, high_is_good=False),
-        ],
-        primary_desc="Armor HP > base",
-        secondary_desc="Mass not in worst 10%",
-        module_type="armor_plate",
-    ),
-
-    # === GYROSTABILIZERS ===
-    'dom_gyro_unstable': RollTarget(
-        name='Domination Gyrostabilizer + Unstable',
-        base_type_id=13939,
-        base_name='Domination Gyrostabilizer',
-        muta_type_id=49733,
-        muta_name='Unstable Gyrostabilizer Mutaplasmid',
-        base_stats={ATTR_DAMAGE: 1.12, ATTR_ROF: 0.89, ATTR_CPU: 20},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DAMAGE, 0.98, 1.02),
-            MutaplasmidRange(ATTR_ROF, 0.975, 1.025),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dps",
-    ),
-    'rf_gyro_unstable': RollTarget(
-        name='Republic Fleet Gyrostabilizer + Unstable',
-        base_type_id=15806,
-        base_name='Republic Fleet Gyrostabilizer',
-        muta_type_id=49733,
-        muta_name='Unstable Gyrostabilizer Mutaplasmid',
-        base_stats={ATTR_DAMAGE: 1.12, ATTR_ROF: 0.89, ATTR_CPU: 20},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DAMAGE, 0.98, 1.02),
-            MutaplasmidRange(ATTR_ROF, 0.975, 1.025),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dps",
-    ),
-
-    # === CAP BATTERIES ===
-    'rf_capbat_gravid': RollTarget(
-        name='Republic Fleet Large Cap Battery + Gravid',
-        base_type_id=41218,
-        base_name='Republic Fleet Large Cap Battery',
-        muta_type_id=48437,
-        muta_name='Gravid Large Cap Battery Mutaplasmid',
-        base_stats={ATTR_CAP_CAPACITY: 1820, ATTR_CPU: 40, ATTR_POWER: 320},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_CAP_CAPACITY, 0.9, 1.2),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_POWER, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="Cap capacity > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="cap_battery",
-    ),
-    'thukker_capbat_gravid': RollTarget(
-        name='Thukker Large Cap Battery + Gravid',
-        base_type_id=41220,
-        base_name='Thukker Large Cap Battery',
-        muta_type_id=48437,
-        muta_name='Gravid Large Cap Battery Mutaplasmid',
-        base_stats={ATTR_CAP_CAPACITY: 1755, ATTR_CPU: 42, ATTR_POWER: 280},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_CAP_CAPACITY, 0.9, 1.2),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_POWER, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="Cap capacity > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="cap_battery",
-    ),
-
-    # === BALLISTIC CONTROL SYSTEMS ===
-    'bcs2_decayed': RollTarget(
-        name='Ballistic Control System II + Decayed',
-        base_type_id=22291,
-        base_name='Ballistic Control System II',
-        muta_type_id=49739,
-        muta_name='Decayed Ballistic Control System Mutaplasmid',
-        base_stats={ATTR_MISSILE_DAMAGE: 1.1, ATTR_ROF: 0.895, ATTR_CPU: 40},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_MISSILE_DAMAGE, 0.995, 1.008),
-            MutaplasmidRange(ATTR_ROF, 0.985, 1.01),
-            MutaplasmidRange(ATTR_CPU, 0.95, 1.25, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="bcs",
-    ),
-    'bcs2_gravid': RollTarget(
-        name='Ballistic Control System II + Gravid',
-        base_type_id=22291,
-        base_name='Ballistic Control System II',
-        muta_type_id=49740,
-        muta_name='Gravid Ballistic Control System Mutaplasmid',
-        base_stats={ATTR_MISSILE_DAMAGE: 1.1, ATTR_ROF: 0.895, ATTR_CPU: 40},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_MISSILE_DAMAGE, 0.989, 1.014),
-            MutaplasmidRange(ATTR_ROF, 0.98, 1.015),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="bcs",
-    ),
-    'cn_bcs_unstable': RollTarget(
-        name='Caldari Navy BCS + Unstable',
-        base_type_id=15681,
-        base_name='Caldari Navy Ballistic Control System',
-        muta_type_id=49741,
-        muta_name='Unstable Ballistic Control System Mutaplasmid',
-        base_stats={ATTR_MISSILE_DAMAGE: 1.12, ATTR_ROF: 0.89, ATTR_CPU: 24},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_MISSILE_DAMAGE, 0.98, 1.02),
-            MutaplasmidRange(ATTR_ROF, 0.975, 1.025),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="bcs",
-    ),
-    'dom_bcs_gravid': RollTarget(
-        name='Domination BCS + Gravid',
-        base_type_id=13935,
-        base_name='Domination Ballistic Control System',
-        muta_type_id=49740,
-        muta_name='Gravid Ballistic Control System Mutaplasmid',
-        base_stats={ATTR_MISSILE_DAMAGE: 1.12, ATTR_ROF: 0.89, ATTR_CPU: 24},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_MISSILE_DAMAGE, 0.989, 1.014),
-            MutaplasmidRange(ATTR_ROF, 0.98, 1.015),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="bcs",
-    ),
-    'dom_bcs_unstable': RollTarget(
-        name='Domination BCS + Unstable',
-        base_type_id=13935,
-        base_name='Domination Ballistic Control System',
-        muta_type_id=49741,
-        muta_name='Unstable Ballistic Control System Mutaplasmid',
-        base_stats={ATTR_MISSILE_DAMAGE: 1.12, ATTR_ROF: 0.89, ATTR_CPU: 24},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_MISSILE_DAMAGE, 0.98, 1.02),
-            MutaplasmidRange(ATTR_ROF, 0.975, 1.025),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-        ],
-        primary_desc="DPS > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="bcs",
-    ),
-
-    # === SHIELD BOOSTERS ===
-    'pith_xlsb_unstable': RollTarget(
-        name='Pith X-Type XL Shield Booster + Unstable',
-        base_type_id=19208,
-        base_name='Pith X-Type X-Large Shield Booster',
-        muta_type_id=47791,
-        muta_name='Unstable X-Large Shield Booster Mutaplasmid',
-        base_stats={ATTR_SHIELD_BOOST: 924, ATTR_DURATION: 4000, ATTR_CPU: 238, ATTR_CAP: 400},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_SHIELD_BOOST, 0.8, 1.2),
-            MutaplasmidRange(ATTR_DURATION, 0.9, 1.1, high_is_good=False),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-            MutaplasmidRange(ATTR_CAP, 0.6, 1.4, high_is_good=False),
-        ],
-        primary_desc="Shield boost/s > base",
-        secondary_desc="Cap not in worst 10%",
-        module_type="shield_booster",
-    ),
-
-    # === WARP DISRUPTORS ===
-    'rf_warp_disruptor_unstable': RollTarget(
-        name='Republic Fleet Warp Disruptor + Unstable',
-        base_type_id=15891,
-        base_name='Republic Fleet Warp Disruptor',
-        muta_type_id=47734,
-        muta_name='Unstable Warp Disruptor Mutaplasmid',
-        base_stats={ATTR_RANGE: 30000, ATTR_CPU: 38, ATTR_CAP: 28},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_RANGE, 0.8, 1.2),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-            MutaplasmidRange(ATTR_CAP, 0.9, 2.5, high_is_good=False),
-        ],
-        primary_desc="Range > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="warp_disruptor",
-    ),
-
-    # === AFTERBURNERS ===
-    'fn_10mn_ab_gravid': RollTarget(
-        name='Fed Navy 10MN AB + Gravid',
-        base_type_id=15766,
-        base_name='Federation Navy 10MN Afterburner',
-        muta_type_id=47752,
-        muta_name='Gravid 10MN Afterburner Mutaplasmid',
-        base_stats={ATTR_VELOCITY_BONUS: 145, ATTR_CPU: 28, ATTR_CAP: 70, ATTR_POWER: 50},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_VELOCITY_BONUS, 0.95, 1.15),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_CAP, 0.8, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_POWER, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="Speed bonus > base",
-        secondary_desc="Cap not in worst 10%",
-        module_type="afterburner",
-    ),
-    'fn_100mn_ab_gravid': RollTarget(
-        name='Fed Navy 100MN AB + Gravid',
-        base_type_id=15770,
-        base_name='Federation Navy 100MN Afterburner',
-        muta_type_id=47756,
-        muta_name='Gravid 100MN Afterburner Mutaplasmid',
-        base_stats={ATTR_VELOCITY_BONUS: 145, ATTR_CPU: 55, ATTR_CAP: 290, ATTR_POWER: 625},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_VELOCITY_BONUS, 0.95, 1.15),
-            MutaplasmidRange(ATTR_CPU, 0.85, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_CAP, 0.8, 1.3, high_is_good=False),
-            MutaplasmidRange(ATTR_POWER, 0.85, 1.3, high_is_good=False),
-        ],
-        primary_desc="Speed bonus > base",
-        secondary_desc="Cap not in worst 10%",
-        module_type="afterburner",
-    ),
-    'core_100mn_ab_unstable': RollTarget(
-        name='Core X-Type 100MN AB + Unstable',
-        base_type_id=18698,
-        base_name='Core X-Type 100MN Afterburner',
-        muta_type_id=47755,
-        muta_name='Unstable 100MN Afterburner Mutaplasmid',
-        base_stats={ATTR_VELOCITY_BONUS: 165, ATTR_CPU: 65, ATTR_CAP: 290, ATTR_POWER: 625},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_VELOCITY_BONUS, 0.8, 1.2),
-            MutaplasmidRange(ATTR_CPU, 0.8, 1.5, high_is_good=False),
-            MutaplasmidRange(ATTR_CAP, 0.6, 1.4, high_is_good=False),
-            MutaplasmidRange(ATTR_POWER, 0.8, 1.5, high_is_good=False),
-        ],
-        primary_desc="Speed bonus > base",
-        secondary_desc="Cap not in worst 10%",
-        module_type="afterburner",
-    ),
-
-    # === DAMAGE CONTROLS ===
-    'dc2_decayed': RollTarget(
-        name='Damage Control II + Decayed',
-        base_type_id=2048,
-        base_name='Damage Control II',
-        muta_type_id=52224,
-        muta_name='Decayed Damage Control Mutaplasmid',
-        base_stats={ATTR_CPU: 30},  # Hull resists are attrs 974-977
-        muta_ranges=[
-            MutaplasmidRange(ATTR_CPU, 0.95, 1.25, high_is_good=False),
-        ],
-        primary_desc="Hull resist > base",
-        secondary_desc="CPU not in worst 10%",
-        module_type="damage_control",
-    ),
-
-    # === DRONE DAMAGE AMPLIFIERS ===
-    'dg_dda_radical': RollTarget(
-        name='Dread Guristas DDA + Radical',
-        base_type_id=33846,
-        base_name='Dread Guristas Drone Damage Amplifier',
-        muta_type_id=60476,
-        muta_name='Radical Drone Damage Amplifier Mutaplasmid',
-        base_stats={ATTR_DDA_DAMAGE: 23.8, ATTR_CPU: 20},
-        muta_ranges=[
-            MutaplasmidRange(ATTR_DDA_DAMAGE, 0.8, 1.2),
-            MutaplasmidRange(ATTR_CPU, 0.7, 1.5, high_is_good=False),
-        ],
-        primary_desc="Drone damage > base (23.8%)",
-        secondary_desc="CPU not in worst 10%",
-        module_type="dda",
-    ),
-}
 
 
 def get_jita_prices(type_ids: list) -> dict:

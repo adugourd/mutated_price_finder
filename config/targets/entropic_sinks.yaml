@@ -1,0 +1,83 @@
+# Entropic Radiation Sink Roll Targets
+
+targets:
+  - key: ers2_gravid
+    name: "Entropic Sink II + Gravid"
+    base_type_id: 47911
+    base_name: "Entropic Radiation Sink II"
+    muta_type_id: 49736
+    muta_name: "Gravid Entropic Radiation Sink Mutaplasmid"
+    module_type: dps
+    base_stats:
+      damage: 1.13
+      rof: 0.94
+      cpu: 30
+    muta_ranges:
+      - attr: damage
+        min_mult: 0.989
+        max_mult: 1.014
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.98
+        max_mult: 1.015
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"
+
+  - key: ers2_unstable
+    name: "Entropic Sink II + Unstable"
+    base_type_id: 47911
+    base_name: "Entropic Radiation Sink II"
+    muta_type_id: 49737
+    muta_name: "Unstable Entropic Radiation Sink Mutaplasmid"
+    module_type: dps
+    base_stats:
+      damage: 1.13
+      rof: 0.94
+      cpu: 30
+    muta_ranges:
+      - attr: damage
+        min_mult: 0.98
+        max_mult: 1.02
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.975
+        max_mult: 1.025
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"
+
+  - key: ers2_decayed
+    name: "Entropic Sink II + Decayed"
+    base_type_id: 47911
+    base_name: "Entropic Radiation Sink II"
+    muta_type_id: 49735
+    muta_name: "Decayed Entropic Radiation Sink Mutaplasmid"
+    module_type: dps
+    base_stats:
+      damage: 1.13
+      rof: 0.94
+      cpu: 30
+    muta_ranges:
+      - attr: damage
+        min_mult: 0.995
+        max_mult: 1.008
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.985
+        max_mult: 1.01
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.95
+        max_mult: 1.25
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"

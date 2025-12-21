@@ -1,0 +1,24 @@
+# Drone Damage Amplifier Roll Targets
+
+targets:
+  - key: dg_dda_radical
+    name: "Dread Guristas DDA + Radical"
+    base_type_id: 33846
+    base_name: "Dread Guristas Drone Damage Amplifier"
+    muta_type_id: 60476
+    muta_name: "Radical Drone Damage Amplifier Mutaplasmid"
+    module_type: dda
+    base_stats:
+      dda_damage: 23.8
+      cpu: 20
+    muta_ranges:
+      - attr: dda_damage
+        min_mult: 0.8
+        max_mult: 1.2
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.7
+        max_mult: 1.5
+        high_is_good: false
+    primary_desc: "Drone damage > base (23.8%)"
+    secondary_desc: "CPU not in worst 10%"

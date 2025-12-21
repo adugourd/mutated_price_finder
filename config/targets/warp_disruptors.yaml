@@ -1,0 +1,29 @@
+# Warp Disruptor Roll Targets
+
+targets:
+  - key: rf_warp_disruptor_unstable
+    name: "Republic Fleet Warp Disruptor + Unstable"
+    base_type_id: 15891
+    base_name: "Republic Fleet Warp Disruptor"
+    muta_type_id: 47734
+    muta_name: "Unstable Warp Disruptor Mutaplasmid"
+    module_type: warp_disruptor
+    base_stats:
+      range: 30000
+      cpu: 38
+      cap: 28
+    muta_ranges:
+      - attr: range
+        min_mult: 0.8
+        max_mult: 1.2
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+      - attr: cap
+        min_mult: 0.9
+        max_mult: 2.5
+        high_is_good: false
+    primary_desc: "Range > base"
+    secondary_desc: "CPU not in worst 10%"

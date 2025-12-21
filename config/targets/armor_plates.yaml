@@ -1,0 +1,66 @@
+# Armor Plate Roll Targets
+
+targets:
+  - key: in_plate_gravid
+    name: "Imperial Navy 1600mm Plate + Gravid"
+    base_type_id: 31900
+    base_name: "Imperial Navy 1600mm Steel Plates"
+    muta_type_id: 47819
+    muta_name: "Gravid Large Armor Plate Mutaplasmid"
+    module_type: armor_plate
+    base_stats:
+      armor_hp: 5250
+      mass: 3000000
+      cpu: 27
+      power: 575
+    muta_ranges:
+      - attr: armor_hp
+        min_mult: 0.9
+        max_mult: 1.2
+        high_is_good: true
+      - attr: mass
+        min_mult: 0.8
+        max_mult: 1.3
+        high_is_good: false
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+      - attr: power
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "Armor HP > base"
+    secondary_desc: "Mass not in worst 10%"
+
+  - key: in_plate_unstable
+    name: "Imperial Navy 1600mm Plate + Unstable"
+    base_type_id: 31900
+    base_name: "Imperial Navy 1600mm Steel Plates"
+    muta_type_id: 47818
+    muta_name: "Unstable Large Armor Plate Mutaplasmid"
+    module_type: armor_plate
+    base_stats:
+      armor_hp: 5250
+      mass: 3000000
+      cpu: 27
+      power: 575
+    muta_ranges:
+      - attr: armor_hp
+        min_mult: 0.7
+        max_mult: 1.3
+        high_is_good: true
+      - attr: mass
+        min_mult: 0.6
+        max_mult: 1.4
+        high_is_good: false
+      - attr: cpu
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+      - attr: power
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+    primary_desc: "Armor HP > base"
+    secondary_desc: "Mass not in worst 10%"

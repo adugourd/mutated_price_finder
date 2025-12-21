@@ -1,0 +1,56 @@
+# Gyrostabilizer Roll Targets
+
+targets:
+  - key: dom_gyro_unstable
+    name: "Domination Gyrostabilizer + Unstable"
+    base_type_id: 13939
+    base_name: "Domination Gyrostabilizer"
+    muta_type_id: 49733
+    muta_name: "Unstable Gyrostabilizer Mutaplasmid"
+    module_type: dps
+    base_stats:
+      damage: 1.12
+      rof: 0.89
+      cpu: 20
+    muta_ranges:
+      - attr: damage
+        min_mult: 0.98
+        max_mult: 1.02
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.975
+        max_mult: 1.025
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"
+
+  - key: rf_gyro_unstable
+    name: "Republic Fleet Gyrostabilizer + Unstable"
+    base_type_id: 15806
+    base_name: "Republic Fleet Gyrostabilizer"
+    muta_type_id: 49733
+    muta_name: "Unstable Gyrostabilizer Mutaplasmid"
+    module_type: dps
+    base_stats:
+      damage: 1.12
+      rof: 0.89
+      cpu: 20
+    muta_ranges:
+      - attr: damage
+        min_mult: 0.98
+        max_mult: 1.02
+        high_is_good: true
+      - attr: rof
+        min_mult: 0.975
+        max_mult: 1.025
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+    primary_desc: "DPS > base"
+    secondary_desc: "CPU not in worst 10%"

@@ -1,0 +1,56 @@
+# Shield Extender Roll Targets
+
+targets:
+  - key: cn_lse_gravid
+    name: "Caldari Navy LSE + Gravid"
+    base_type_id: 31930
+    base_name: "Caldari Navy Large Shield Extender"
+    muta_type_id: 47807
+    muta_name: "Gravid Large Shield Extender Mutaplasmid"
+    module_type: shield_extender
+    base_stats:
+      shield_cap: 2750
+      cpu: 35
+      power: 150
+    muta_ranges:
+      - attr: shield_cap
+        min_mult: 0.9
+        max_mult: 1.2
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+      - attr: power
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "Shield HP > base"
+    secondary_desc: "CPU not in worst 10%"
+
+  - key: rf_lse_gravid
+    name: "Republic Fleet LSE + Gravid"
+    base_type_id: 31932
+    base_name: "Republic Fleet Large Shield Extender"
+    muta_type_id: 47807
+    muta_name: "Gravid Large Shield Extender Mutaplasmid"
+    module_type: shield_extender
+    base_stats:
+      shield_cap: 2750
+      cpu: 40
+      power: 145
+    muta_ranges:
+      - attr: shield_cap
+        min_mult: 0.9
+        max_mult: 1.2
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+      - attr: power
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "Shield HP > base"
+    secondary_desc: "CPU not in worst 10%"

@@ -1,0 +1,56 @@
+# Capacitor Battery Roll Targets
+
+targets:
+  - key: rf_capbat_gravid
+    name: "Republic Fleet Large Cap Battery + Gravid"
+    base_type_id: 41218
+    base_name: "Republic Fleet Large Cap Battery"
+    muta_type_id: 48437
+    muta_name: "Gravid Large Cap Battery Mutaplasmid"
+    module_type: cap_battery
+    base_stats:
+      cap_capacity: 1820
+      cpu: 40
+      power: 320
+    muta_ranges:
+      - attr: cap_capacity
+        min_mult: 0.9
+        max_mult: 1.2
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+      - attr: power
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "Cap capacity > base"
+    secondary_desc: "CPU not in worst 10%"
+
+  - key: thukker_capbat_gravid
+    name: "Thukker Large Cap Battery + Gravid"
+    base_type_id: 41220
+    base_name: "Thukker Large Cap Battery"
+    muta_type_id: 48437
+    muta_name: "Gravid Large Cap Battery Mutaplasmid"
+    module_type: cap_battery
+    base_stats:
+      cap_capacity: 1755
+      cpu: 42
+      power: 280
+    muta_ranges:
+      - attr: cap_capacity
+        min_mult: 0.9
+        max_mult: 1.2
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+      - attr: power
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "Cap capacity > base"
+    secondary_desc: "CPU not in worst 10%"

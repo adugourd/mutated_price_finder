@@ -1,0 +1,98 @@
+# Afterburner Roll Targets
+
+targets:
+  - key: fn_10mn_ab_gravid
+    name: "Fed Navy 10MN AB + Gravid"
+    base_type_id: 15766
+    base_name: "Federation Navy 10MN Afterburner"
+    muta_type_id: 47752
+    muta_name: "Gravid 10MN Afterburner Mutaplasmid"
+    module_type: afterburner
+    base_stats:
+      velocity_bonus: 145
+      cpu: 28
+      cap: 70
+      power: 50
+    muta_ranges:
+      - attr: velocity_bonus
+        min_mult: 0.95
+        max_mult: 1.15
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+      - attr: cap
+        min_mult: 0.8
+        max_mult: 1.3
+        high_is_good: false
+      - attr: power
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "Speed bonus > base"
+    secondary_desc: "Cap not in worst 10%"
+
+  - key: fn_100mn_ab_gravid
+    name: "Fed Navy 100MN AB + Gravid"
+    base_type_id: 15770
+    base_name: "Federation Navy 100MN Afterburner"
+    muta_type_id: 47756
+    muta_name: "Gravid 100MN Afterburner Mutaplasmid"
+    module_type: afterburner
+    base_stats:
+      velocity_bonus: 145
+      cpu: 55
+      cap: 290
+      power: 625
+    muta_ranges:
+      - attr: velocity_bonus
+        min_mult: 0.95
+        max_mult: 1.15
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+      - attr: cap
+        min_mult: 0.8
+        max_mult: 1.3
+        high_is_good: false
+      - attr: power
+        min_mult: 0.85
+        max_mult: 1.3
+        high_is_good: false
+    primary_desc: "Speed bonus > base"
+    secondary_desc: "Cap not in worst 10%"
+
+  - key: core_100mn_ab_unstable
+    name: "Core X-Type 100MN AB + Unstable"
+    base_type_id: 18698
+    base_name: "Core X-Type 100MN Afterburner"
+    muta_type_id: 47755
+    muta_name: "Unstable 100MN Afterburner Mutaplasmid"
+    module_type: afterburner
+    base_stats:
+      velocity_bonus: 165
+      cpu: 65
+      cap: 290
+      power: 625
+    muta_ranges:
+      - attr: velocity_bonus
+        min_mult: 0.8
+        max_mult: 1.2
+        high_is_good: true
+      - attr: cpu
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+      - attr: cap
+        min_mult: 0.6
+        max_mult: 1.4
+        high_is_good: false
+      - attr: power
+        min_mult: 0.8
+        max_mult: 1.5
+        high_is_good: false
+    primary_desc: "Speed bonus > base"
+    secondary_desc: "Cap not in worst 10%"

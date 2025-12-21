@@ -1,0 +1,37 @@
+# API URLs and Configuration Constants
+
+api:
+  # Fuzzwork market API for Jita prices
+  fuzzwork_market_url: "https://market.fuzzwork.co.uk/aggregates/"
+  jita_region_id: 10000002
+
+  # EVE Ref public contract snapshots
+  everef_contracts_url: "https://data.everef.net/public-contracts/public-contracts-latest.v2.tar.bz2"
+
+cache:
+  # Cache duration in seconds (30 minutes)
+  contract_cache_duration: 1800
+
+  # Cache directory (relative to project root)
+  cache_dir: ".cache"
+
+simulation:
+  # Number of Monte Carlo samples for success rate calculation
+  num_samples: 100000
+
+analysis:
+  # Percentile threshold for "catastrophic" secondary stats
+  catastrophe_percentile: 90
+
+  # IQR multiplier for outlier detection
+  iqr_multiplier: 1.5
+
+risk:
+  # Default confidence threshold for "safe" investments
+  default_confidence_pct: 95
+
+  # Default maximum sales needed to profit filter
+  default_max_sells: 5
+
+  # Default bankroll for risk analysis
+  default_bankroll: 1_000_000_000

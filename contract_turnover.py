@@ -15,17 +15,23 @@ Over a 2-month period, the noise from cancellations should average out,
 giving us a reasonable proxy for relative demand.
 """
 
+from __future__ import annotations
+
 import re
 import tarfile
-import tempfile
 import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
-from collections import defaultdict
-from io import BytesIO
+from typing import TypedDict
 
 import requests
 import pandas as pd
+
+
+class SnapshotData(TypedDict):
+    """Data loaded from a contract snapshot."""
+    contracts: pd.DataFrame
+    dynamic_items: pd.DataFrame
 
 # Cache directory
 CACHE_DIR = Path(__file__).parent / ".cache" / "contract_history"
@@ -102,9 +108,9 @@ def extract_csv_from_archive(archive_path: Path, csv_name: str) -> pd.DataFrame:
     raise FileNotFoundError(f"Could not find {csv_name} in archive")
 
 
-def load_snapshot_data(archive_path: Path) -> dict:
+def load_snapshot_data(archive_path: Path) -> SnapshotData:
     """Load contracts and dynamic items from a snapshot."""
-    data = {}
+    data: SnapshotData = {}  # type: ignore[typeddict-item]
 
     # Load contracts (need contract_id, date_expired, price)
     contracts = extract_csv_from_archive(archive_path, 'contracts.csv')
@@ -117,7 +123,7 @@ def load_snapshot_data(archive_path: Path) -> dict:
     return data
 
 
-def load_type_names() -> dict:
+def load_type_names() -> dict[int, str]:
     """Load type names from SDE."""
     cache_path = CACHE_DIR.parent / "invTypes.csv"
 
@@ -131,7 +137,7 @@ def load_type_names() -> dict:
     return dict(zip(types_df['typeID'], types_df['typeName']))
 
 
-def analyze_turnover(dates: list, type_names: dict) -> pd.DataFrame:
+def analyze_turnover(dates: list[datetime], type_names: dict[int, str]) -> pd.DataFrame:
     """Analyze contract turnover across multiple days."""
 
     all_disappeared = []
@@ -215,7 +221,8 @@ def format_isk(value: float) -> str:
     return f"{value:.0f}"
 
 
-def main():
+def main() -> None:
+    """Main entry point for the contract turnover analyzer CLI."""
     parser = argparse.ArgumentParser(
         description="Analyze contract turnover for mutated modules"
     )

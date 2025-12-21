@@ -13,11 +13,41 @@ Uses Monte Carlo simulation to calculate success probability where:
 - Secondary stats must NOT be catastrophic (not in worst 10% of rolls)
 """
 
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
+from typing import TypedDict, Any
 
 import pandas as pd
 import numpy as np
+
+
+class StatAnalysisResult(TypedDict, total=False):
+    """Result from stat-based contract analysis."""
+    n_total: int
+    n_sellable: int
+    n_outliers: int
+    n_used: int
+    expected_price: float
+    method: str
+    base_stat: float
+    max_stat: float
+    midpoint_stat: float
+    anchor_stat: float
+    anchor_price: float
+    slope: float
+    data_min_stat: float
+    data_max_stat: float
+    coverage_pct: float
+
+
+class ContractDistribution(TypedDict):
+    """Distribution of contracts for a target."""
+    count: int
+    stats: np.ndarray
+    prices: np.ndarray
+    stat_analysis: StatAnalysisResult
 
 # Import from refactored modules
 from src.config.loader import load_all_targets, load_constants, load_attributes
@@ -47,7 +77,7 @@ def analyze_contracts_stat_based(
     primary_attr_id: int,
     base_stat: float,
     max_stat: float,
-) -> dict:
+) -> ContractDistribution:
     """
     Analyze contract prices using stat-based filtering.
 
@@ -122,7 +152,8 @@ def analyze_contracts_stat_based(
     }
 
 
-def main():
+def main() -> None:
+    """Main entry point for the ROI calculator CLI."""
     parser = argparse.ArgumentParser(
         description="Calculate ROI for rolling mutated modules"
     )

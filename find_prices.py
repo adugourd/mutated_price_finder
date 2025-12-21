@@ -10,14 +10,32 @@ Sources:
 - Docs: https://docs.everef.net/datasets/public-contracts.html
 """
 
+from __future__ import annotations
+
 import tarfile
 import tempfile
 import argparse
 from pathlib import Path
 from datetime import datetime
+from typing import TypedDict
 
 import requests
 import pandas as pd
+
+
+class ModuleTypeConfig(TypedDict):
+    """Configuration for a module type."""
+    name: str
+    source_type_ids: set[int]
+    type_names: dict[int, str]
+
+
+class ContractData(TypedDict):
+    """Data loaded from contract archives."""
+    contracts: pd.DataFrame
+    items: pd.DataFrame
+    dynamic_items: pd.DataFrame
+    dogma_attributes: pd.DataFrame
 
 # EVE Ref data URL
 EVEREF_CONTRACTS_URL = "https://data.everef.net/public-contracts/public-contracts-latest.v2.tar.bz2"
@@ -146,7 +164,7 @@ GYROSTABILIZER_TYPE_IDS = MODULE_TYPES['gyro']['source_type_ids']
 TYPE_NAMES = MODULE_TYPES['gyro']['type_names']
 
 
-def download_contract_data(cache_dir: Path = None) -> Path:
+def download_contract_data(cache_dir: Path | None = None) -> Path:
     """Download the latest EVE Ref contract data archive."""
     if cache_dir is None:
         cache_dir = Path(tempfile.gettempdir()) / "everef_contracts"
@@ -191,11 +209,11 @@ def extract_csv_from_archive(archive_path: Path, csv_name: str) -> pd.DataFrame:
     raise FileNotFoundError(f"Could not find {csv_name} in archive")
 
 
-def load_contract_data(archive_path: Path) -> dict:
+def load_contract_data(archive_path: Path) -> ContractData:
     """Load all relevant CSV files from the archive."""
     print("Extracting contract data...")
 
-    data = {}
+    data: ContractData = {}  # type: ignore[typeddict-item]
 
     # Load contracts
     print("  Loading contracts...")
@@ -216,7 +234,7 @@ def load_contract_data(archive_path: Path) -> dict:
     return data
 
 
-def find_mutated_modules(data: dict, module_type: str, source_type_id: int = None) -> pd.DataFrame:
+def find_mutated_modules(data: ContractData, module_type: str, source_type_id: int | None = None) -> pd.DataFrame:
     """Find all mutated modules of a given type in contracts with their attributes."""
 
     module_config = MODULE_TYPES.get(module_type)
@@ -287,7 +305,7 @@ def find_mutated_modules(data: dict, module_type: str, source_type_id: int = Non
 
 
 # Backwards compatibility alias
-def find_mutated_gyrostabilizers(data: dict, source_type_id: int = None) -> pd.DataFrame:
+def find_mutated_gyrostabilizers(data: ContractData, source_type_id: int | None = None) -> pd.DataFrame:
     return find_mutated_modules(data, 'gyro', source_type_id)
 
 
@@ -299,7 +317,7 @@ def calculate_dps_multiplier(damage_mod: float, rof_bonus_pct: float) -> float:
 
 def find_equivalent_or_worse(gyros: pd.DataFrame,
                               my_dps_mult: float,
-                              my_cpu: float = None) -> pd.DataFrame:
+                              my_cpu: float | None = None) -> pd.DataFrame:
     """
     Find gyrostabilizers with equivalent or worse DPS.
 
@@ -327,7 +345,7 @@ def find_equivalent_or_worse(gyros: pd.DataFrame,
 
 def find_equivalent_or_better(gyros: pd.DataFrame,
                                my_dps_mult: float,
-                               my_cpu: float = None) -> pd.DataFrame:
+                               my_cpu: float | None = None) -> pd.DataFrame:
     """
     Find gyrostabilizers with equivalent or better DPS.
 
@@ -358,7 +376,7 @@ def format_isk(value: float) -> str:
     return f"{value:.0f}"
 
 
-def display_results(results: pd.DataFrame, title: str, my_dps_mult: float = None):
+def display_results(results: pd.DataFrame, title: str, my_dps_mult: float | None = None) -> None:
     """Display results in a formatted table."""
     if results.empty:
         print(f"\n{title}")
@@ -399,7 +417,8 @@ def display_results(results: pd.DataFrame, title: str, my_dps_mult: float = None
         print(f"Median price: {format_isk(results['price'].median())}")
 
 
-def main():
+def main() -> None:
+    """Main entry point for the price finder CLI."""
     parser = argparse.ArgumentParser(
         description="Find lowest prices for equivalent mutated modules"
     )

@@ -11,18 +11,52 @@ Sources:
 - Fuzzwork SDE: https://www.fuzzwork.co.uk/dump/latest/
 """
 
-import json
+from __future__ import annotations
+
 import time
-import gzip
 import argparse
 from pathlib import Path
-from datetime import datetime, timedelta
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
+from datetime import datetime
+from typing import TypedDict
 
 import requests
 import pandas as pd
+
+
+class SDEData(TypedDict):
+    """SDE data loaded for analysis."""
+    systems: pd.DataFrame
+    regions: pd.DataFrame
+    types: pd.DataFrame
+    groups: pd.DataFrame
+
+
+class SystemInfo(TypedDict):
+    """Information about a solar system."""
+    security: float
+    sec_class: str
+    region: str
+
+
+class AbyssalItem(TypedDict):
+    """An abyssal item found on a killmail."""
+    killmail_id: int
+    type_id: int
+    type_name: str
+    quantity: int
+    destroyed: bool
+    dropped: bool
+    system_id: int
+    sec_class: str
+    security: float
+    flag: int
+
+
+class RegionResults(TypedDict):
+    """Results from analyzing a region's killmails."""
+    abyssal_items: list[AbyssalItem]
+    killmail_count: int
+    abyssal_killmail_count: int
 
 # Cache directory
 CACHE_DIR = Path(__file__).parent / ".cache"
@@ -60,11 +94,11 @@ def download_sde_file(filename: str, cache_hours: int = 168) -> pd.DataFrame:
     return pd.read_csv(cache_path)
 
 
-def load_sde_data() -> dict:
+def load_sde_data() -> SDEData:
     """Load required SDE data for system security and type info."""
     print("Loading SDE data...")
 
-    data = {}
+    data: SDEData = {}  # type: ignore[typeddict-item]
 
     # Load solar systems with security status
     systems = download_sde_file("mapSolarSystems.csv")
@@ -97,7 +131,7 @@ def get_security_class(security: float) -> str:
         return "wormhole"
 
 
-def build_system_lookup(sde_data: dict) -> dict:
+def build_system_lookup(sde_data: SDEData) -> dict[int, SystemInfo]:
     """Build lookup tables for system security and region info."""
     systems = sde_data["systems"]
     regions = sde_data["regions"]
@@ -106,7 +140,7 @@ def build_system_lookup(sde_data: dict) -> dict:
     systems = systems.merge(regions, on="regionID", how="left")
 
     # Build lookup dict: system_id -> {security, region_name, sec_class}
-    lookup = {}
+    lookup: dict[int, SystemInfo] = {}
     for _, row in systems.iterrows():
         lookup[int(row["solarSystemID"])] = {
             "security": row["security"],
@@ -117,7 +151,7 @@ def build_system_lookup(sde_data: dict) -> dict:
     return lookup
 
 
-def find_abyssal_type_ids(sde_data: dict) -> dict:
+def find_abyssal_type_ids(sde_data: SDEData) -> dict[int, str]:
     """Find all abyssal module type IDs and their names."""
     types = sde_data["types"]
 
@@ -127,7 +161,7 @@ def find_abyssal_type_ids(sde_data: dict) -> dict:
     return dict(zip(abyssal["typeID"], abyssal["typeName"]))
 
 
-def find_mutaplasmid_type_ids(sde_data: dict) -> dict:
+def find_mutaplasmid_type_ids(sde_data: SDEData) -> dict[int, str]:
     """Find all mutaplasmid type IDs and their names."""
     types = sde_data["types"]
 
@@ -154,7 +188,7 @@ def fetch_zkb_killmails(region_id: int, page: int = 1) -> list:
         return []
 
 
-def fetch_esi_killmail(killmail_id: int, killmail_hash: str) -> Optional[dict]:
+def fetch_esi_killmail(killmail_id: int, killmail_hash: str) -> dict | None:
     """Fetch full killmail details from ESI."""
     url = f"{ESI_API}/killmails/{killmail_id}/{killmail_hash}/"
 
@@ -170,7 +204,7 @@ def fetch_esi_killmail(killmail_id: int, killmail_hash: str) -> Optional[dict]:
 
 
 
-def get_highsec_lowsec_regions(sde_data: dict) -> list:
+def get_highsec_lowsec_regions(sde_data: SDEData) -> list[int]:
     """Get list of region IDs that contain highsec or lowsec systems."""
     systems = sde_data["systems"]
 
@@ -214,14 +248,16 @@ POPULAR_PVP_REGIONS = {
 def analyze_killmails_for_region(
     region_id: int,
     region_name: str,
-    system_lookup: dict,
-    abyssal_types: dict,
+    system_lookup: dict[int, SystemInfo],
+    abyssal_types: dict[int, str],
     max_pages: int = 5,
-    sec_filter: set = {"highsec", "lowsec"},
-) -> dict:
+    sec_filter: set[str] | None = None,
+) -> RegionResults:
     """Analyze killmails for a specific region."""
+    if sec_filter is None:
+        sec_filter = {"highsec", "lowsec"}
 
-    results = {
+    results: RegionResults = {
         "abyssal_items": [],
         "killmail_count": 0,
         "abyssal_killmail_count": 0,
@@ -309,7 +345,8 @@ def format_isk(value: float) -> str:
     return f"{value:.0f}"
 
 
-def main():
+def main() -> None:
+    """Main entry point for the killmail demand analyzer CLI."""
     parser = argparse.ArgumentParser(
         description="Analyze zkillboard for mutated module demand in highsec/lowsec"
     )

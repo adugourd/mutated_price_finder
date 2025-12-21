@@ -25,6 +25,8 @@ Or set environment variables:
     python check_hangar.py
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import json
@@ -34,8 +36,35 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlencode, urlparse, parse_qs
 from pathlib import Path
 from datetime import datetime
+from typing import TypedDict, ClassVar
 
 import requests
+
+
+class TokenData(TypedDict, total=False):
+    """OAuth token data."""
+    access_token: str
+    refresh_token: str
+    expires_in: int
+    expires_at: float
+    character_id: int
+    character_name: str
+
+
+class HeatsinkEvaluation(TypedDict):
+    """Evaluation result for an abyssal heatsink."""
+    damage_mult: float
+    rof_mult: float
+    cpu: float
+    dps_mult: float
+    base_dps_mult: float
+    dps_change_pct: float
+    damage_change_pct: float
+    rof_change_pct: float
+    cpu_change_pct: float
+    quality: str
+    source_type_id: int | None
+    mutator_type_id: int | None
 
 # ESI endpoints
 ESI_AUTH_URL = "https://login.eveonline.com/v2/oauth/authorize"
@@ -74,9 +103,9 @@ ABYSSAL_HEATSINK_TYPE_ID = 47745  # "Abyssal Heat Sink"
 class OAuthCallbackHandler(BaseHTTPRequestHandler):
     """Handle OAuth callback from EVE login."""
 
-    code = None
+    code: ClassVar[str | None] = None
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
 
@@ -97,11 +126,11 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'<html><body><h1>Authorization failed</h1></body></html>')
 
-    def log_message(self, format, *args):
+    def log_message(self, format: str, *args: object) -> None:
         pass  # Suppress logging
 
 
-def authenticate(client_id: str, client_secret: str, callback_port: int = 8080) -> dict:
+def authenticate(client_id: str, client_secret: str, callback_port: int = 8080) -> TokenData:
     """Perform OAuth2 authentication with EVE Online."""
 
     callback_url = f"http://localhost:{callback_port}/callback"
@@ -178,7 +207,7 @@ def authenticate(client_id: str, client_secret: str, callback_port: int = 8080) 
     return tokens
 
 
-def load_token() -> dict:
+def load_token() -> TokenData | None:
     """Load cached token if valid."""
     if not TOKEN_FILE.exists():
         return None
@@ -193,7 +222,7 @@ def load_token() -> dict:
     return tokens
 
 
-def refresh_token(client_id: str, client_secret: str, refresh_token: str) -> dict:
+def refresh_token(client_id: str, client_secret: str, refresh_token: str) -> TokenData:
     """Refresh an expired access token."""
     token_data = {
         'grant_type': 'refresh_token',
@@ -259,7 +288,7 @@ def get_character_assets(access_token: str, character_id: int) -> list:
     return all_assets
 
 
-def get_item_dogma(type_id: int, item_id: int) -> dict:
+def get_item_dogma(type_id: int, item_id: int) -> dict | None:
     """Get dynamic dogma attributes for an abyssal item."""
     url = f"{ESI_BASE}/dogma/dynamic/items/{type_id}/{item_id}/"
 
@@ -272,7 +301,7 @@ def get_item_dogma(type_id: int, item_id: int) -> dict:
     return response.json()
 
 
-def evaluate_heatsink(dogma_data: dict) -> dict:
+def evaluate_heatsink(dogma_data: dict | None) -> HeatsinkEvaluation | None:
     """Evaluate an abyssal heatsink's quality."""
 
     if not dogma_data:
@@ -325,7 +354,7 @@ def evaluate_heatsink(dogma_data: dict) -> dict:
     }
 
 
-def get_type_names(type_ids: list) -> dict:
+def get_type_names(type_ids: list[int] | set[int]) -> dict[int, str]:
     """Get type names from ESI."""
     if not type_ids:
         return {}
@@ -339,7 +368,8 @@ def get_type_names(type_ids: list) -> dict:
     return {item['id']: item['name'] for item in response.json()}
 
 
-def main():
+def main() -> int:
+    """Main entry point for the hangar checker CLI."""
     parser = argparse.ArgumentParser(description="Check your EVE Online abyssal heatsinks")
     parser.add_argument('--client-id', help='EVE application client ID')
     parser.add_argument('--client-secret', help='EVE application client secret')

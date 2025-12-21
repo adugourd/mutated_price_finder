@@ -34,6 +34,7 @@ ATTR_MISSILE_DAMAGE = _attributes['missile_damage']
 
 # Simulation parameters
 NUM_SAMPLES = _constants['simulation']['num_samples']
+CATASTROPHE_PERCENTILE = _constants['analysis']['catastrophe_percentile']
 
 
 @dataclass
@@ -94,7 +95,7 @@ def calc_dps_success_rate(target: RollTarget, damage_attr: int = ATTR_DAMAGE) ->
     # CPU catastrophe threshold (worst 10%)
     base_cpu = target.base_stats.get(ATTR_CPU, 1.0)
     rolled_cpu = base_cpu * rolls[ATTR_CPU]
-    cpu_catastrophe_threshold = np.percentile(rolled_cpu, 90)
+    cpu_catastrophe_threshold = np.percentile(rolled_cpu, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_cpu < cpu_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
@@ -131,7 +132,7 @@ def calc_dps_stat_based_success_rate(target: RollTarget, damage_attr: int = ATTR
     # CPU catastrophe
     base_cpu = target.base_stats.get(ATTR_CPU, 1.0)
     rolled_cpu = base_cpu * rolls[ATTR_CPU]
-    cpu_catastrophe_threshold = np.percentile(rolled_cpu, 90)
+    cpu_catastrophe_threshold = np.percentile(rolled_cpu, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_cpu < cpu_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
@@ -164,7 +165,7 @@ def calc_web_success_rate(target: RollTarget) -> SuccessResult:
     # CPU catastrophe
     base_cpu = target.base_stats.get(ATTR_CPU, 25)
     rolled_cpu = base_cpu * rolls[ATTR_CPU]
-    cpu_catastrophe_threshold = np.percentile(rolled_cpu, 90)
+    cpu_catastrophe_threshold = np.percentile(rolled_cpu, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_cpu < cpu_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
@@ -194,7 +195,7 @@ def calc_shield_booster_success_rate(target: RollTarget) -> SuccessResult:
     # Cap catastrophe
     base_cap = target.base_stats.get(ATTR_CAP, 280)
     rolled_cap = base_cap * rolls[ATTR_CAP]
-    cap_catastrophe_threshold = np.percentile(rolled_cap, 90)
+    cap_catastrophe_threshold = np.percentile(rolled_cap, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_cap < cap_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
@@ -220,7 +221,7 @@ def calc_plate_success_rate(target: RollTarget) -> SuccessResult:
     # Mass catastrophe
     base_mass = target.base_stats.get(ATTR_MASS, 2500000)
     rolled_mass = base_mass * rolls[ATTR_MASS]
-    mass_catastrophe_threshold = np.percentile(rolled_mass, 90)
+    mass_catastrophe_threshold = np.percentile(rolled_mass, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_mass < mass_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
@@ -246,7 +247,7 @@ def calc_ab_success_rate(target: RollTarget) -> SuccessResult:
     # Cap catastrophe
     base_cap = target.base_stats.get(ATTR_CAP, 135)
     rolled_cap = base_cap * rolls[ATTR_CAP]
-    cap_catastrophe_threshold = np.percentile(rolled_cap, 90)
+    cap_catastrophe_threshold = np.percentile(rolled_cap, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_cap < cap_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
@@ -272,7 +273,7 @@ def calc_dda_success_rate(target: RollTarget) -> SuccessResult:
     # CPU catastrophe
     base_cpu = target.base_stats.get(ATTR_CPU, 45)
     rolled_cpu = base_cpu * rolls[ATTR_CPU]
-    cpu_catastrophe_threshold = np.percentile(rolled_cpu, 90)
+    cpu_catastrophe_threshold = np.percentile(rolled_cpu, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_cpu < cpu_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
@@ -299,7 +300,7 @@ def calc_shield_extender_success_rate(target: RollTarget) -> SuccessResult:
     # CPU catastrophe
     base_cpu = target.base_stats.get(ATTR_CPU, 35)
     rolled_cpu = base_cpu * rolls[ATTR_CPU]
-    cpu_catastrophe_threshold = np.percentile(rolled_cpu, 90)
+    cpu_catastrophe_threshold = np.percentile(rolled_cpu, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_cpu < cpu_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
@@ -326,7 +327,7 @@ def calc_cap_battery_success_rate(target: RollTarget) -> SuccessResult:
     # CPU catastrophe
     base_cpu = target.base_stats.get(ATTR_CPU, 42)
     rolled_cpu = base_cpu * rolls[ATTR_CPU]
-    cpu_catastrophe_threshold = np.percentile(rolled_cpu, 90)
+    cpu_catastrophe_threshold = np.percentile(rolled_cpu, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_cpu < cpu_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
@@ -353,7 +354,7 @@ def calc_warp_disruptor_success_rate(target: RollTarget) -> SuccessResult:
     # CPU catastrophe
     base_cpu = target.base_stats.get(ATTR_CPU, 30)
     rolled_cpu = base_cpu * rolls[ATTR_CPU]
-    cpu_catastrophe_threshold = np.percentile(rolled_cpu, 90)
+    cpu_catastrophe_threshold = np.percentile(rolled_cpu, CATASTROPHE_PERCENTILE)
     secondary_ok = rolled_cpu < cpu_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok

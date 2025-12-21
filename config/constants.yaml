@@ -21,10 +21,20 @@ simulation:
 
 analysis:
   # Percentile threshold for "catastrophic" secondary stats
+  # 90 means the worst 10% of rolls are considered catastrophic
   catastrophe_percentile: 90
 
-  # IQR multiplier for outlier detection
+  # IQR multiplier for Tukey's fences outlier detection
+  # Standard is 1.5 for "outliers", 3.0 for "far outliers"
   iqr_multiplier: 1.5
+
+  # Legacy outlier cap: prices above median * this multiplier are filtered
+  # Used as a fallback when IQR method has insufficient data
+  legacy_outlier_cap_multiplier: 2.0
+
+  # Data coverage below this percentage triggers "low confidence" warning
+  # Warns user that price estimate may be unreliable
+  low_confidence_coverage_pct: 50
 
 risk:
   # Default confidence threshold for "safe" investments

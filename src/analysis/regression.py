@@ -5,22 +5,31 @@ Fits constrained linear regression models to contract price data
 for estimating expected sale prices.
 """
 
-from typing import Optional
+from __future__ import annotations
 
 import numpy as np
 
+from src.config.loader import load_constants
 
-def remove_outliers_iqr(values: np.ndarray, multiplier: float = 1.5) -> tuple[np.ndarray, int]:
+# Load thresholds from config
+_constants = load_constants()
+IQR_MULTIPLIER = _constants['analysis']['iqr_multiplier']
+
+
+def remove_outliers_iqr(values: np.ndarray, multiplier: float | None = None) -> tuple[np.ndarray, int]:
     """
     Remove outliers using IQR method.
 
     Args:
         values: Array of values to filter
-        multiplier: IQR multiplier for outlier bounds (default 1.5)
+        multiplier: IQR multiplier for outlier bounds (default from config)
 
     Returns:
         Tuple of (filtered_values, n_outliers_removed)
     """
+    if multiplier is None:
+        multiplier = IQR_MULTIPLIER
+
     if len(values) < 4:
         return values, 0
 
@@ -124,8 +133,8 @@ def fit_constrained_regression(
     iqr = q3 - q1
 
     if iqr > 0:
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
+        lower_bound = q1 - IQR_MULTIPLIER * iqr
+        upper_bound = q3 + IQR_MULTIPLIER * iqr
         outlier_mask = (sorted_prices >= lower_bound) & (sorted_prices <= upper_bound)
     else:
         outlier_mask = np.ones(len(sorted_prices), dtype=bool)

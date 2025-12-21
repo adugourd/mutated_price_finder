@@ -4,19 +4,30 @@ Fuzzwork Market API client for Jita prices.
 Fetches market data from the Fuzzwork Market API for EVE Online items.
 """
 
-from typing import Optional
+from __future__ import annotations
 
-import requests
+from typing import TypedDict
 
 from src.config.loader import load_constants
+from src.utils.http import create_session, fetch_with_retry
 
 # Load API configuration
 _constants = load_constants()
 FUZZWORK_MARKET_URL = _constants['api']['fuzzwork_market_url']
 JITA_REGION = _constants['api']['jita_region_id']
 
+# Module-level session for connection pooling
+_session = create_session(retries=3, backoff_factor=0.5)
 
-def get_jita_prices(type_ids: list[int]) -> dict[int, dict]:
+
+class PriceData(TypedDict):
+    """Price data for an item."""
+    min: float
+    median: float
+    percentile: float
+
+
+def get_jita_prices(type_ids: list[int]) -> dict[int, PriceData]:
     """
     Get Jita sell prices for multiple type IDs.
 
@@ -32,8 +43,11 @@ def get_jita_prices(type_ids: list[int]) -> dict[int, dict]:
     type_str = ','.join(str(t) for t in type_ids)
     url = f"{FUZZWORK_MARKET_URL}?region={JITA_REGION}&types={type_str}"
 
-    response = requests.get(url, timeout=30)
-    response.raise_for_status()
+    response = fetch_with_retry(url, session=_session)
+    if response is None:
+        # Return zeros if fetch failed (exit_on_error=True by default)
+        return {tid: {'min': 0, 'median': 0, 'percentile': 0} for tid in type_ids}
+
     data = response.json()
 
     prices = {}

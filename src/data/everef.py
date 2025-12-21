@@ -4,20 +4,24 @@ EVE Ref contract data fetching and parsing.
 Downloads and extracts contract snapshots from EVE Ref public contract data.
 """
 
+from __future__ import annotations
+
 import tarfile
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
-import requests
 import pandas as pd
 
 from src.config.loader import load_constants
+from src.utils.http import create_session
 
 # Load configuration
 _constants = load_constants()
 EVEREF_CONTRACTS_URL = _constants['api']['everef_contracts_url']
 CACHE_DURATION = _constants['cache']['contract_cache_duration']
+
+# Module-level session for connection pooling
+_session = create_session(retries=3, backoff_factor=1.0, timeout=120)
 
 
 def get_cache_dir() -> Path:
@@ -27,7 +31,7 @@ def get_cache_dir() -> Path:
     return cache_dir
 
 
-def download_contract_archive(cache_dir: Optional[Path] = None) -> Path:
+def download_contract_archive(cache_dir: Path | None = None) -> Path:
     """
     Download contract data archive if not cached or cache expired.
 
@@ -49,7 +53,7 @@ def download_contract_archive(cache_dir: Optional[Path] = None) -> Path:
             return archive_path
 
     print("Downloading contract data...")
-    response = requests.get(EVEREF_CONTRACTS_URL, stream=True, timeout=120)
+    response = _session.get(EVEREF_CONTRACTS_URL, stream=True, timeout=120)
     response.raise_for_status()
 
     with open(archive_path, 'wb') as f:

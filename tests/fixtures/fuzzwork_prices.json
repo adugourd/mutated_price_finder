@@ -1,0 +1,38 @@
+{
+  "33848": {
+    "buy": {
+      "max": 80000000.0,
+      "min": 75000000.0,
+      "median": 77500000.0,
+      "percentile": 78000000.0,
+      "volume": 50,
+      "orderCount": 15
+    },
+    "sell": {
+      "max": 95000000.0,
+      "min": 88000000.0,
+      "median": 90000000.0,
+      "percentile": 89000000.0,
+      "volume": 120,
+      "orderCount": 45
+    }
+  },
+  "56306": {
+    "buy": {
+      "max": 300000000.0,
+      "min": 280000000.0,
+      "median": 290000000.0,
+      "percentile": 285000000.0,
+      "volume": 20,
+      "orderCount": 8
+    },
+    "sell": {
+      "max": 380000000.0,
+      "min": 352000000.0,
+      "median": 360000000.0,
+      "percentile": 355000000.0,
+      "volume": 35,
+      "orderCount": 12
+    }
+  }
+}

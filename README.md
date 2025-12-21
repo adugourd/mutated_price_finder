@@ -10,10 +10,18 @@ EVE Online's abyssal module system creates a fascinating probability problem: pl
 
 ## Statistical Methods
 
+### Distribution Assumption
+
+The Monte Carlo simulation assumes a **uniform (flat) distribution** for each mutated attribute. This is based on the documented game mechanics from [EVE University](https://wiki.eveuniversity.org/Abyssal_modules):
+
+> *"Each stat that is modified by the mutaplasmid is modified independently, from a flat random distribution across the possible range."*
+
+This independence property is key: each attribute rolls separately, meaning we can model the joint probability of multiple favorable outcomes as the product of individual probabilities.
+
 ### Monte Carlo Simulation
 - Simulates 100,000 mutation rolls per item configuration
 - Models multi-attribute joint probability (damage, rate of fire, CPU cost)
-- Calculates success rates accounting for correlated outcomes
+- Calculates success rates accounting for independent attribute rolls
 
 ### Regression-Based Price Estimation
 - Fits constrained linear models through market data
@@ -103,6 +111,7 @@ python roi_calculator.py
 | [EVE Ref](https://data.everef.net/public-contracts/) | Contract snapshots with item attributes | 30 minutes |
 | [Fuzzwork](https://market.fuzzwork.co.uk/) | Jita market prices | Real-time |
 | [EVE ESI](https://esi.evetech.net/) | Base item statistics | Static |
+| [EVE University](https://wiki.eveuniversity.org/Abyssal_modules) | Game mechanics documentation | Reference |
 
 ## License
 

@@ -58,6 +58,7 @@ from src.analysis.regression import fit_constrained_regression
 from src.analysis.risk import calculate_roi, calculate_bankroll_risk
 from src.formatters.isk import format_isk
 from src.formatters.stats import format_stat
+from src.models import get_or_train_model, predict_with_model, MODULE_CONFIGS, simulate_prices_monte_carlo, MonteCarloResult
 
 # Load configuration
 _constants = load_constants()
@@ -69,6 +70,20 @@ ATTR_DAMAGE = _attributes['damage']
 
 # Load roll targets from YAML
 ROLL_TARGETS = load_all_targets()
+
+# Mapping from target module_type to XGBoost model type
+# Only high-value module types are supported by XGBoost
+TARGET_TO_XGBOOST = {
+    'cap_battery': 'capbat',
+    'gyro': 'gyro',
+    'heatsink': 'heatsink',
+    'magstab': 'magstab',
+    'bcs': 'bcs',
+    'entropic': 'entropic',
+}
+
+# Cache for loaded XGBoost models (to avoid reloading for each target)
+_xgboost_models: dict[str, Any] = {}
 
 
 def analyze_contracts_stat_based(
@@ -150,6 +165,63 @@ def analyze_contracts_stat_based(
         'prices': prices,
         'stat_analysis': stat_analysis,
     }
+
+
+def get_xgboost_monte_carlo(
+    target_module_type: str,
+    training_days: int = 5,
+    n_samples: int = 100_000,
+) -> tuple[MonteCarloResult | None, str]:
+    """
+    Get expected price distribution using Monte Carlo + XGBoost.
+
+    Simulates random rolls within the observed contract ranges and
+    predicts prices for each roll using the XGBoost model.
+
+    Args:
+        target_module_type: The target's module_type (e.g., 'cap_battery')
+        training_days: Days of training data to use
+        n_samples: Number of Monte Carlo samples
+
+    Returns:
+        Tuple of (MonteCarloResult, method_description) or (None, reason)
+    """
+    global _xgboost_models
+
+    # Check if we have XGBoost support for this module type
+    xgb_type = TARGET_TO_XGBOOST.get(target_module_type)
+    if xgb_type is None:
+        return None, f"no_xgboost_support:{target_module_type}"
+
+    # Check if model type is configured
+    if xgb_type not in MODULE_CONFIGS:
+        return None, f"no_model_config:{xgb_type}"
+
+    # Load or get cached model
+    cache_key = f"{xgb_type}_{training_days}"
+    if cache_key not in _xgboost_models:
+        max_age = _constants.get('models', {}).get('max_model_age_days', 10)
+        model_info = get_or_train_model(xgb_type, training_days, max_age_days=max_age, verbose=False)
+        if model_info is None:
+            return None, f"model_training_failed:{xgb_type}"
+        _xgboost_models[cache_key] = model_info
+
+    model_info = _xgboost_models[cache_key]
+
+    # Check if model has feature ranges (needed for Monte Carlo)
+    if model_info.feature_ranges is None:
+        return None, f"no_feature_ranges:{xgb_type}"
+
+    # Run Monte Carlo simulation
+    try:
+        mc_result = simulate_prices_monte_carlo(model_info, n_samples)
+        if mc_result is None:
+            return None, f"simulation_failed:{xgb_type}"
+
+        method = f"mc_xgboost_{xgb_type}_{training_days}d"
+        return mc_result, method
+    except Exception as e:
+        return None, f"simulation_error:{e}"
 
 
 def main() -> None:
@@ -243,7 +315,23 @@ def main() -> None:
             continue
 
         stat_analysis = dist['stat_analysis']
-        realistic_sale_price = stat_analysis['expected_price']
+
+        # Try XGBoost Monte Carlo simulation for supported module types
+        training_days = _constants.get('models', {}).get('roi_calculator_training_days', 5)
+        mc_result, mc_method = get_xgboost_monte_carlo(
+            target.module_type, training_days
+        )
+
+        if mc_result is not None:
+            # Use mean price from Monte Carlo simulation
+            realistic_sale_price = mc_result.mean_price
+            pricing_method = mc_method
+            xgb_monte_carlo = mc_result
+        else:
+            # XGBoost is mandatory - skip items without model support
+            print(f"    WARNING: No XGBoost model available for {target.module_type}, skipping...")
+            print(f"    (Train with: python train_price_model.py --module {target.module_type} --days 5)")
+            continue
 
         # Calculate success rate using shared module
         success_result = get_success_rate(target)
@@ -260,6 +348,8 @@ def main() -> None:
             'stat_based': True,
             'module_type': target.module_type,
             'primary_attr_id': primary_range.attr_id,
+            'pricing_method': pricing_method,
+            'xgb_monte_carlo': xgb_monte_carlo,
         }
 
         # Calculate ROI using shared module
@@ -333,7 +423,18 @@ def main() -> None:
             data_max_fmt = format_stat(data_max, module_type, attr_id)
             coverage_warning = " ** LOW CONFIDENCE **" if coverage < 50 else ""
             print(f"    Data coverage: [{data_min_fmt} -> {data_max_fmt}] = {coverage:.0f}%{coverage_warning}")
-        print(f"    Exp. price at midpoint: {format_isk(pa['expected_price']):>12}")
+        print(f"    Regression price:       {format_isk(pa['expected_price']):>12}")
+
+        # Show XGBoost Monte Carlo pricing if available
+        pricing_method = pa.get('pricing_method', 'regression')
+        mc = pa.get('xgb_monte_carlo')
+        if mc is not None:
+            print(f"\n  XGBOOST MONTE CARLO ({mc.n_samples:,} samples):")
+            print(f"    Mean price:             {format_isk(mc.mean_price):>12}")
+            print(f"    Median price:           {format_isk(mc.median_price):>12}")
+            print(f"    5th percentile:         {format_isk(mc.percentile_5):>12}  (pessimistic)")
+            print(f"    95th percentile:        {format_isk(mc.percentile_95):>12}  (optimistic)")
+            print(f"    ** Using Monte Carlo mean for ROI **")
 
         print(f"\n  SUCCESS PROBABILITY (Monte Carlo):")
         print(f"    Primary:     {target.primary_desc}")
@@ -343,7 +444,9 @@ def main() -> None:
         print(f"    Sellable:    {r['success_rate']*100:>10.1f}%  (stat > base + OK secondary)")
 
         print(f"\n  ROI ANALYSIS:")
-        print(f"    Exp. sale:     {format_isk(pa['expected_price']):>12}  (regression midpoint)")
+        # Show the actual sale price being used (always XGBoost Monte Carlo)
+        pricing_method = pa.get('pricing_method', 'xgboost')
+        print(f"    Exp. sale:     {format_isk(r['sale_price']):>12}  ({pricing_method})")
         print(f"    Exp. value:    {format_isk(roi['expected_value']):>12}  per roll")
         print(f"    Exp. profit:   {format_isk(roi['expected_profit']):>12}  per roll")
         print(f"    ROI:           {roi['roi_pct']:>11.1f}%")

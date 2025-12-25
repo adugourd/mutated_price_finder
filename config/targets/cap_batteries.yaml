@@ -26,7 +26,7 @@ targets:
         max_mult: 1.3
         high_is_good: false
     primary_desc: "Cap capacity > base"
-    secondary_desc: "CPU not in worst 10%"
+    secondary_desc: "Powergrid not in worst 10%"
 
   - key: thukker_capbat_gravid
     name: "Thukker Large Cap Battery + Gravid"
@@ -53,4 +53,4 @@ targets:
         max_mult: 1.3
         high_is_good: false
     primary_desc: "Cap capacity > base"
-    secondary_desc: "CPU not in worst 10%"
+    secondary_desc: "Powergrid not in worst 10%"

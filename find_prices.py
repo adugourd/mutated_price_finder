@@ -21,6 +21,11 @@ from typing import TypedDict
 
 import requests
 import pandas as pd
+import numpy as np
+
+from src.analysis.regression import remove_outliers_iqr, fit_constrained_regression, estimate_price_at_stat
+from src.models import get_or_train_model, predict_with_model
+from src.config.loader import load_constants
 
 
 class ModuleTypeConfig(TypedDict):
@@ -44,6 +49,9 @@ EVEREF_CONTRACTS_URL = "https://data.everef.net/public-contracts/public-contract
 ATTR_DAMAGE_MODIFIER = 64       # damageMultiplier
 ATTR_ROF_BONUS = 204            # speedMultiplier (rate of fire)
 ATTR_CPU = 50                   # cpu
+ATTR_POWER = 30                 # power (powergrid)
+ATTR_CAP_CAPACITY = 67          # capacitorBonus
+ATTR_CAP_WARFARE_RESIST = 2267  # capacitorWarfareResistanceBonus
 
 # Module type configurations
 # Each module type has: source_type_ids, type_names, display_name
@@ -157,6 +165,30 @@ MODULE_TYPES = {
             15681: "Caldari Navy",
         },
     },
+    'capbat': {
+        'name': 'Large Cap Battery',
+        'module_class': 'cap_battery',  # Special handling flag
+        'source_type_ids': {
+            41218,  # Republic Fleet Large Cap Battery
+            41220,  # Thukker Large Cap Battery
+            3554,   # Large Cap Battery II
+            3552,   # Large Cap Battery I
+            41216,  # Dark Blood Large Cap Battery
+            41214,  # True Sansha Large Cap Battery
+        },
+        'type_names': {
+            41218: "Republic Fleet",
+            41220: "Thukker",
+            3554: "Cap Bat II",
+            3552: "Cap Bat I",
+            41216: "Dark Blood",
+            41214: "True Sansha",
+        },
+        'base_stats': {
+            41218: {'cap': 1820, 'cpu': 40, 'pg': 320, 'resist': -26.95},  # RF
+            41220: {'cap': 1755, 'cpu': 42, 'pg': 280, 'resist': -29.25},  # Thukker
+        },
+    },
 }
 
 # For backwards compatibility
@@ -266,20 +298,43 @@ def find_mutated_modules(data: ContractData, module_type: str, source_type_id: i
         dogma_attrs['item_id'].isin(module_dynamic['item_id'])
     ]
 
-    # Pivot to get damage modifier, ROF bonus, and CPU as columns
-    damage_mod = module_attrs[module_attrs['attribute_id'] == ATTR_DAMAGE_MODIFIER][['item_id', 'value']]
-    damage_mod = damage_mod.rename(columns={'value': 'damage_modifier'})
+    # Check if this is a cap battery (different attributes)
+    is_cap_battery = module_config.get('module_class') == 'cap_battery'
 
-    rof_bonus = module_attrs[module_attrs['attribute_id'] == ATTR_ROF_BONUS][['item_id', 'value']]
-    rof_bonus = rof_bonus.rename(columns={'value': 'rof_multiplier'})
+    if is_cap_battery:
+        # Cap battery attributes
+        cap = module_attrs[module_attrs['attribute_id'] == ATTR_CAP_CAPACITY][['item_id', 'value']]
+        cap = cap.rename(columns={'value': 'cap_bonus'})
 
-    cpu = module_attrs[module_attrs['attribute_id'] == ATTR_CPU][['item_id', 'value']]
-    cpu = cpu.rename(columns={'value': 'cpu'})
+        cpu = module_attrs[module_attrs['attribute_id'] == ATTR_CPU][['item_id', 'value']]
+        cpu = cpu.rename(columns={'value': 'cpu'})
 
-    # Merge attributes with dynamic items
-    result = module_dynamic.merge(damage_mod, on='item_id', how='left')
-    result = result.merge(rof_bonus, on='item_id', how='left')
-    result = result.merge(cpu, on='item_id', how='left')
+        pg = module_attrs[module_attrs['attribute_id'] == ATTR_POWER][['item_id', 'value']]
+        pg = pg.rename(columns={'value': 'powergrid'})
+
+        resist = module_attrs[module_attrs['attribute_id'] == ATTR_CAP_WARFARE_RESIST][['item_id', 'value']]
+        resist = resist.rename(columns={'value': 'cap_warfare_resist'})
+
+        # Merge attributes with dynamic items
+        result = module_dynamic.merge(cap, on='item_id', how='left')
+        result = result.merge(cpu, on='item_id', how='left')
+        result = result.merge(pg, on='item_id', how='left')
+        result = result.merge(resist, on='item_id', how='left')
+    else:
+        # Damage module attributes (gyro, heatsink, etc.)
+        damage_mod = module_attrs[module_attrs['attribute_id'] == ATTR_DAMAGE_MODIFIER][['item_id', 'value']]
+        damage_mod = damage_mod.rename(columns={'value': 'damage_modifier'})
+
+        rof_bonus = module_attrs[module_attrs['attribute_id'] == ATTR_ROF_BONUS][['item_id', 'value']]
+        rof_bonus = rof_bonus.rename(columns={'value': 'rof_multiplier'})
+
+        cpu = module_attrs[module_attrs['attribute_id'] == ATTR_CPU][['item_id', 'value']]
+        cpu = cpu.rename(columns={'value': 'cpu'})
+
+        # Merge attributes with dynamic items
+        result = module_dynamic.merge(damage_mod, on='item_id', how='left')
+        result = result.merge(rof_bonus, on='item_id', how='left')
+        result = result.merge(cpu, on='item_id', how='left')
 
     # Dynamic items already have contract_id, so just merge with contracts for price
     result = result.merge(
@@ -288,15 +343,16 @@ def find_mutated_modules(data: ContractData, module_type: str, source_type_id: i
         how='inner'
     )
 
-    # Convert ROF multiplier to bonus percentage
-    # In EVE, speedMultiplier of 0.875 means 12.5% ROF bonus (1 - 0.875 = 0.125)
-    if 'rof_multiplier' in result.columns:
-        result['rof_bonus_pct'] = (1 - result['rof_multiplier']) * 100
+    if not is_cap_battery:
+        # Convert ROF multiplier to bonus percentage
+        # In EVE, speedMultiplier of 0.875 means 12.5% ROF bonus (1 - 0.875 = 0.125)
+        if 'rof_multiplier' in result.columns:
+            result['rof_bonus_pct'] = (1 - result['rof_multiplier']) * 100
 
-    # Calculate DPS multiplier: damage_mod / speed_multiplier
-    # This is the actual DPS contribution of the module
-    if 'damage_modifier' in result.columns and 'rof_multiplier' in result.columns:
-        result['dps_multiplier'] = result['damage_modifier'] / result['rof_multiplier']
+        # Calculate DPS multiplier: damage_mod / speed_multiplier
+        # This is the actual DPS contribution of the module
+        if 'damage_modifier' in result.columns and 'rof_multiplier' in result.columns:
+            result['dps_multiplier'] = result['damage_modifier'] / result['rof_multiplier']
 
     # Add source type name
     result['source_name'] = result['source_type_id'].map(module_config['type_names']).fillna('Unknown')
@@ -365,6 +421,39 @@ def find_equivalent_or_better(gyros: pd.DataFrame,
     return equivalent_or_better.sort_values('price')
 
 
+def find_capbat_equivalent_or_worse(capbats: pd.DataFrame,
+                                     my_cap: float,
+                                     my_cpu: float | None = None,
+                                     my_pg: float | None = None) -> pd.DataFrame:
+    """
+    Find cap batteries with equivalent or worse stats.
+
+    For selling: find items worse than yours to price competitively above them.
+    Cap battery quality: higher cap is better, lower CPU/PG is better.
+    """
+    # Primary filter: cap bonus <= yours (worse or equal cap)
+    mask = capbats['cap_bonus'] <= my_cap
+
+    result = capbats[mask].copy()
+    return result.sort_values('price')
+
+
+def find_capbat_equivalent_or_better(capbats: pd.DataFrame,
+                                      my_cap: float,
+                                      my_cpu: float | None = None,
+                                      my_pg: float | None = None) -> pd.DataFrame:
+    """
+    Find cap batteries with equivalent or better stats.
+
+    For buying/competition: find items better than yours.
+    """
+    # Primary filter: cap bonus >= yours (better or equal cap)
+    mask = capbats['cap_bonus'] >= my_cap
+
+    result = capbats[mask].copy()
+    return result.sort_values('price')
+
+
 def format_isk(value: float) -> str:
     """Format ISK value with appropriate suffix."""
     if value >= 1_000_000_000:
@@ -417,6 +506,200 @@ def display_results(results: pd.DataFrame, title: str, my_dps_mult: float | None
         print(f"Median price: {format_isk(results['price'].median())}")
 
 
+def calculate_capbat_quality_score(cap: float, cpu: float, pg: float, resist: float) -> float:
+    """
+    Calculate normalized quality score for a cap battery.
+    Higher score = better overall quality.
+
+    Weights (cap is dominant):
+    - Cap: 70% (primary stat - capacitor bonus)
+    - CPU: 10% (fitting cost - lower is better)
+    - PG: 10% (fitting cost - lower is better)
+    - Resist: 10% (cap warfare resistance - less negative is better)
+
+    Normalized ranges based on observed market data:
+    - Cap: 1600-2250 GJ
+    - CPU: 30-65 tf
+    - PG: 220-480 MW
+    - Resist: -35% to -20%
+    """
+    # Normalize each stat to 0-1 range
+    cap_norm = np.clip((cap - 1600) / (2250 - 1600), 0, 1)
+    cpu_norm = np.clip((65 - cpu) / (65 - 30), 0, 1)  # Inverted: lower is better
+    pg_norm = np.clip((480 - pg) / (480 - 220), 0, 1)  # Inverted: lower is better
+    resist_norm = np.clip((resist - (-35)) / ((-20) - (-35)), 0, 1)  # Less negative is better
+
+    # Weighted sum (cap dominant at 70%)
+    score = 0.70 * cap_norm + 0.10 * cpu_norm + 0.10 * pg_norm + 0.10 * resist_norm
+    return score
+
+
+def display_capbat_results(modules: pd.DataFrame, my_cap: float, my_cpu: float, my_pg: float, my_resist: float = -27.0) -> None:
+    """Display cap battery pricing analysis and recommendations."""
+    BASE_CAP = 1820  # RF Large Cap Battery base
+
+    # Calculate quality score for your item
+    my_score = calculate_capbat_quality_score(my_cap, my_cpu, my_pg, my_resist)
+
+    # Calculate cap difference and quality scores for all items
+    modules = modules.copy()
+    modules['cap_diff_pct'] = ((modules['cap_bonus'] / my_cap) - 1) * 100
+    modules['cap_vs_base_pct'] = ((modules['cap_bonus'] / BASE_CAP) - 1) * 100
+
+    # Calculate quality score for each item
+    modules['quality_score'] = modules.apply(
+        lambda row: calculate_capbat_quality_score(
+            row['cap_bonus'],
+            row['cpu'],
+            row['powergrid'],
+            row.get('cap_warfare_resist', -27.0)
+        ),
+        axis=1
+    )
+    modules['score_diff_pct'] = ((modules['quality_score'] / my_score) - 1) * 100
+
+    # Apply IQR outlier removal to prices
+    all_prices = modules['price'].values
+    filtered_prices, n_outliers = remove_outliers_iqr(all_prices)
+    price_upper_bound = filtered_prices.max() if len(filtered_prices) > 0 else all_prices.max()
+    price_lower_bound = filtered_prices.min() if len(filtered_prices) > 0 else 0
+
+    # Filter modules to exclude price outliers
+    modules_filtered = modules[(modules['price'] >= price_lower_bound) & (modules['price'] <= price_upper_bound)].copy()
+
+    print(f"\n  Your quality score: {my_score:.3f}")
+    print(f"  Price outliers removed (IQR): {n_outliers}")
+    print(f"  Price range after filtering: {format_isk(price_lower_bound)} - {format_isk(price_upper_bound)}")
+
+    # Tiers based on QUALITY SCORE (not just cap)
+    # Sweetspot: within -5% to 0% of your quality score (slightly worse overall)
+    sweetspot = modules_filtered[(modules_filtered['score_diff_pct'] >= -5) & (modules_filtered['score_diff_pct'] < 0)].sort_values('price')
+
+    # Items better than yours (higher quality score)
+    better = modules_filtered[modules_filtered['score_diff_pct'] >= 0].sort_values('price')
+
+    # Items worse than sweetspot
+    worse = modules_filtered[modules_filtered['score_diff_pct'] < -5].sort_values('price')
+
+    # Display all items sorted by quality score
+    print(f"\n{'='*115}")
+    print("ALL CAP BATTERIES ON MARKET (sorted by quality score, outliers removed)")
+    print(f"{'='*115}")
+    print(f"{'Price':>12} | {'Cap':>8} | {'vs Base':>8} | {'Score':>6} | {'vs You':>8} | {'CPU':>6} | {'PG':>6} | {'Resist':>7} | Source")
+    print("-" * 115)
+
+    sorted_modules = modules_filtered.sort_values('quality_score', ascending=False)
+    for _, row in sorted_modules.head(30).iterrows():
+        price_str = format_isk(row['price'])
+        cap_val = row.get('cap_bonus', 0)
+        cpu_val = row.get('cpu', 0)
+        pg_val = row.get('powergrid', 0)
+        resist_val = row.get('cap_warfare_resist', 0)
+        vs_base = row.get('cap_vs_base_pct', 0)
+        score = row.get('quality_score', 0)
+        score_diff = row.get('score_diff_pct', 0)
+
+        # Marker for items relative to yours (based on quality score)
+        marker = ""
+        if score_diff >= 0:
+            marker = " <-- BETTER"
+        elif score_diff >= -5:
+            marker = " <-- SIMILAR"
+
+        print(f"{price_str:>12} | {cap_val:>8.1f} | {vs_base:>+7.1f}% | {score:>6.3f} | {score_diff:>+7.1f}% | {cpu_val:>6.1f} | {pg_val:>6.1f} | {resist_val:>6.1f}% | {row['source_name']}{marker}")
+
+    if len(sorted_modules) > 30:
+        print(f"... and {len(sorted_modules) - 30} more")
+    print("-" * 115)
+
+    # Display sweetspot tier
+    print(f"\n{'='*115}")
+    print(f"SWEETSPOT TIER (-5% to 0% quality score vs yours) - Price above these")
+    print(f"{'='*115}")
+    if not sweetspot.empty:
+        print(f"{'Price':>12} | {'Cap':>8} | {'Score':>6} | {'vs You':>8} | {'CPU':>6} | {'PG':>6} | {'Resist':>7} | Source")
+        print("-" * 100)
+        for _, row in sweetspot.iterrows():
+            price_str = format_isk(row['price'])
+            print(f"{price_str:>12} | {row['cap_bonus']:>8.1f} | {row['quality_score']:>6.3f} | {row['score_diff_pct']:>+7.1f}% | {row['cpu']:>6.1f} | {row['powergrid']:>6.1f} | {row.get('cap_warfare_resist', 0):>6.1f}% | {row['source_name']}")
+        print("-" * 100)
+        print(f"Count: {len(sweetspot)} | Lowest: {format_isk(sweetspot['price'].min())} | Median: {format_isk(sweetspot['price'].median())}")
+    else:
+        print("No items in sweetspot tier")
+
+    # Display better items
+    print(f"\n{'='*115}")
+    print("BETTER THAN YOURS (0%+ quality score) - Your competition")
+    print(f"{'='*115}")
+    if not better.empty:
+        print(f"{'Price':>12} | {'Cap':>8} | {'Score':>6} | {'vs You':>8} | {'CPU':>6} | {'PG':>6} | {'Resist':>7} | Source")
+        print("-" * 100)
+        for _, row in better.head(10).iterrows():
+            price_str = format_isk(row['price'])
+            print(f"{price_str:>12} | {row['cap_bonus']:>8.1f} | {row['quality_score']:>6.3f} | {row['score_diff_pct']:>+7.1f}% | {row['cpu']:>6.1f} | {row['powergrid']:>6.1f} | {row.get('cap_warfare_resist', 0):>6.1f}% | {row['source_name']}")
+        if len(better) > 10:
+            print(f"... and {len(better) - 10} more")
+        print("-" * 100)
+        print(f"Cheapest better item: {format_isk(better['price'].min())}")
+    else:
+        print("No items better than yours - you're at the top!")
+
+    # Pricing recommendation - XGBoost ML prediction
+    print(f"\n{'='*115}")
+    print("PRICING RECOMMENDATION (XGBoost ML Model)")
+    print(f"{'='*115}")
+
+    # Load or train the XGBoost model
+    try:
+        constants = load_constants()
+        training_days = constants.get('models', {}).get('find_prices_training_days', 180)
+        max_age = constants.get('models', {}).get('max_model_age_days', 10)
+    except Exception:
+        training_days = 180
+        max_age = 10
+
+    print(f"\nLoading cap battery price model ({training_days} days of training data)...")
+    model_info = get_or_train_model('capbat', training_days, max_age_days=max_age, verbose=True)
+
+    if model_info is None:
+        print("  ERROR: Could not load or train XGBoost model")
+        print("  Falling back to market comparison...")
+        if not better.empty:
+            print(f"  Cheapest better item: {format_isk(better['price'].min())}")
+        return
+
+    # Predict price for your item
+    features = {
+        'cap_bonus': my_cap,
+        'cpu': my_cpu,
+        'powergrid': my_pg,
+        'cap_warfare_resist': my_resist,
+    }
+    predicted_price = predict_with_model(model_info, features)
+
+    print(f"\n  Model R² Score: {model_info.r2_score:.3f}")
+    print(f"  Model trained on: {model_info.n_contracts} contracts")
+    print(f"  Model age: {model_info.age_days:.1f} days")
+
+    print(f"\n  YOUR STATS:")
+    print(f"    Cap: {my_cap:.1f} GJ | CPU: {my_cpu:.1f} tf | PG: {my_pg:.1f} MW | Resist: {my_resist:.1f}%")
+
+    print(f"\n  --> RECOMMENDED PRICE: {format_isk(predicted_price)}")
+
+    # Compare with market
+    if not better.empty:
+        cheapest_better = better['price'].min()
+        if predicted_price > cheapest_better:
+            print(f"\n  NOTE: Better items available at {format_isk(cheapest_better)}")
+            print(f"        Consider pricing closer to {format_isk(cheapest_better * 0.95)} for faster sale")
+        else:
+            print(f"\n  Cheapest better item: {format_isk(cheapest_better)} (your predicted price is competitive)")
+
+    if not sweetspot.empty:
+        median_similar = sweetspot['price'].median()
+        print(f"  Similar items median: {format_isk(median_similar)}")
+
+
 def main() -> None:
     """Main entry point for the price finder CLI."""
     parser = argparse.ArgumentParser(
@@ -448,6 +731,24 @@ def main() -> None:
         help='Your module CPU usage (e.g., 18.25)'
     )
     parser.add_argument(
+        '--cap', '--cap-bonus',
+        type=float,
+        default=None,
+        help='(Cap battery) Your cap bonus in GJ (e.g., 2050)'
+    )
+    parser.add_argument(
+        '--pg', '--powergrid',
+        type=float,
+        default=None,
+        help='(Cap battery) Your powergrid usage in MW (e.g., 295)'
+    )
+    parser.add_argument(
+        '--resist',
+        type=float,
+        default=None,
+        help='(Cap battery) Your cap warfare resist %% (e.g., -27.5)'
+    )
+    parser.add_argument(
         '--show-better',
         action='store_true',
         help='Also show items with better stats (for comparison)'
@@ -463,119 +764,192 @@ def main() -> None:
 
     module_config = MODULE_TYPES[args.module]
     module_name = module_config['name']
+    is_cap_battery = module_config.get('module_class') == 'cap_battery'
 
-    # Default stats per module type if not provided
-    defaults = {
-        'gyro': {'damage': 1.145, 'rof': 12.49, 'cpu': 18.25},
-        'entropic': {'damage': 1.12, 'rof': 8.0, 'cpu': 35.0},
-        'heatsink': {'damage': 1.12, 'rof': 10.0, 'cpu': 30.0},
-        'magstab': {'damage': 1.12, 'rof': 10.0, 'cpu': 30.0},
-        'bcs': {'damage': 1.10, 'rof': 10.5, 'cpu': 40.0},
-    }
-
-    default = defaults.get(args.module, {'damage': 1.1, 'rof': 10.0, 'cpu': 30.0})
-    damage_mod = args.damage_mod if args.damage_mod is not None else default['damage']
-    rof_bonus = args.rof_bonus if args.rof_bonus is not None else default['rof']
-    cpu = args.cpu if args.cpu is not None else default['cpu']
-
-    # Calculate your DPS multiplier
-    my_dps_mult = calculate_dps_multiplier(damage_mod, rof_bonus)
-
-    print("=" * 60)
-    print(f"EVE Online Mutated {module_name} Price Finder")
-    print("=" * 60)
-    print(f"\nYour stats:")
-    print(f"  Damage Modifier: {damage_mod}")
-    print(f"  ROF Bonus: {rof_bonus}%")
-    print(f"  CPU: {cpu}")
-    print(f"  DPS Multiplier: {my_dps_mult:.4f}")
-
-    # Download and load data
+    # Download and load data first (needed for both paths)
     archive_path = download_contract_data(args.cache_dir)
     data = load_contract_data(archive_path)
 
-    # Find mutated modules of the selected type
-    modules = find_mutated_modules(data, args.module, source_type_id=None)
+    if is_cap_battery:
+        # Cap battery handling
+        cap = args.cap if args.cap is not None else 1820  # RF base
+        cpu = args.cpu if args.cpu is not None else 40
+        pg = args.pg if args.pg is not None else 320
+        resist = args.resist if args.resist is not None else -27.0  # RF base
 
-    if modules.empty:
-        print(f"\nNo mutated {module_name}s found in current contracts!")
-        return
+        # Calculate quality score for display
+        my_score = calculate_capbat_quality_score(cap, cpu, pg, resist)
 
-    print(f"\nFound {len(modules)} mutated {module_name} contracts total")
+        print("=" * 115)
+        print(f"EVE Online Mutated {module_name} Price Finder")
+        print("=" * 115)
+        print(f"\nYour stats:")
+        print(f"  Capacitor Bonus: {cap} GJ")
+        print(f"  CPU: {cpu} tf")
+        print(f"  Powergrid: {pg} MW")
+        print(f"  Cap Warfare Resist: {resist}%")
+        print(f"  Quality Score: {my_score:.3f}")
+        print(f"  vs RF Base (1820 GJ): {((cap/1820)-1)*100:+.1f}%")
 
-    # Calculate DPS difference from yours for all items
-    modules = modules.copy()
-    modules['dps_diff_pct'] = ((modules['dps_multiplier'] / my_dps_mult) - 1) * 100
+        # Find mutated cap batteries
+        modules = find_mutated_modules(data, args.module, source_type_id=None)
 
-    # Sweetspot tier: -0.2% to 0% DPS (greedy competitive pricing)
-    sweetspot = modules[(modules['dps_diff_pct'] >= -0.2) & (modules['dps_diff_pct'] < 0)].sort_values('price')
+        if modules.empty:
+            print(f"\nNo mutated {module_name}s found in current contracts!")
+            return
 
-    # Items better than yours (competition)
-    better = modules[modules['dps_diff_pct'] >= 0].sort_values('price')
+        # Filter out free transfers and obviously mispriced items
+        modules = modules[modules['price'] > 1_000_000].copy()  # Minimum 1M ISK
 
-    # Items worse than sweetspot (much worse than yours)
-    worse = modules[modules['dps_diff_pct'] < -0.2].sort_values('price')
+        # Filter out items with abnormally low cap (likely wrong module type)
+        modules = modules[modules['cap_bonus'] > 1500].copy()  # Large Cap Batteries should have >1500 GJ
 
-    # Display sweetspot tier
-    print(f"\n{'='*60}")
-    print("SWEETSPOT TIER (-0.2% to 0% DPS) - Your competition")
-    print(f"{'='*60}")
-    if not sweetspot.empty:
-        print(f"{'Price':>12} | {'DPS':>8} | {'Diff':>6} | {'Dmg':>6} | {'ROF':>6} | {'CPU':>5} | Source")
-        print("-" * 85)
-        for _, row in sweetspot.iterrows():
-            price_str = format_isk(row['price'])
-            print(f"{price_str:>12} | {row['dps_multiplier']:.4f} | {row['dps_diff_pct']:+.2f}% | {row['damage_modifier']:.3f} | {row['rof_bonus_pct']:.2f}% | {row['cpu']:>5.1f} | {row['source_name']}")
-        print("-" * 85)
-        print(f"Count: {len(sweetspot)} | Lowest: {format_isk(sweetspot['price'].min())} | Median: {format_isk(sweetspot['price'].median())}")
+        print(f"\nFound {len(modules)} mutated {module_name} contracts total (after filtering free transfers)")
+
+        # Use cap battery display function
+        display_capbat_results(modules, cap, cpu, pg, resist)
+
     else:
-        print("No items in sweetspot tier - you may be at the top!")
+        # Original damage module handling
+        defaults = {
+            'gyro': {'damage': 1.145, 'rof': 12.49, 'cpu': 18.25},
+            'entropic': {'damage': 1.12, 'rof': 8.0, 'cpu': 35.0},
+            'heatsink': {'damage': 1.12, 'rof': 10.0, 'cpu': 30.0},
+            'magstab': {'damage': 1.12, 'rof': 10.0, 'cpu': 30.0},
+            'bcs': {'damage': 1.10, 'rof': 10.5, 'cpu': 40.0},
+        }
 
-    # Display better items (brief)
-    print(f"\n{'='*60}")
-    print("BETTER THAN YOU (0%+ DPS)")
-    print(f"{'='*60}")
-    if not better.empty:
-        for _, row in better.head(5).iterrows():
-            price_str = format_isk(row['price'])
-            print(f"{price_str:>12} | DPS {row['dps_multiplier']:.4f} ({row['dps_diff_pct']:+.2f}%) | CPU {row['cpu']:.1f} | {row['source_name']}")
-        if len(better) > 5:
-            print(f"... and {len(better) - 5} more")
-        print(f"Cheapest better item: {format_isk(better['price'].min())}")
-    else:
-        print("No items better than yours - you're at the top!")
+        default = defaults.get(args.module, {'damage': 1.1, 'rof': 10.0, 'cpu': 30.0})
+        damage_mod = args.damage_mod if args.damage_mod is not None else default['damage']
+        rof_bonus = args.rof_bonus if args.rof_bonus is not None else default['rof']
+        cpu = args.cpu if args.cpu is not None else default['cpu']
 
-    # Pricing recommendation
-    print(f"\n{'='*60}")
-    print("PRICING RECOMMENDATION")
-    print(f"{'='*60}")
+        # Calculate your DPS multiplier
+        my_dps_mult = calculate_dps_multiplier(damage_mod, rof_bonus)
 
-    if not sweetspot.empty:
-        sorted_prices = sweetspot['price'].sort_values().values
-        competitive_price = sorted_prices[0]
-        fair_price = sweetspot['price'].median()
+        print("=" * 60)
+        print(f"EVE Online Mutated {module_name} Price Finder")
+        print("=" * 60)
+        print(f"\nYour stats:")
+        print(f"  Damage Modifier: {damage_mod}")
+        print(f"  ROF Bonus: {rof_bonus}%")
+        print(f"  CPU: {cpu}")
+        print(f"  DPS Multiplier: {my_dps_mult:.4f}")
 
-        print(f"Competitive (quick sale): {format_isk(competitive_price)}")
-        print(f"Fair value (median):      {format_isk(fair_price)}")
+        # Find mutated modules of the selected type
+        modules = find_mutated_modules(data, args.module, source_type_id=None)
 
-        # Find the gap between lowest and second lowest
-        if len(sorted_prices) >= 2:
-            lowest = sorted_prices[0]
-            second_lowest = sorted_prices[1]
-            gap_price = (lowest + second_lowest) / 2
-            print(f"\nGap price strategy:")
-            print(f"  Lowest:        {format_isk(lowest)}")
-            print(f"  Second lowest: {format_isk(second_lowest)}")
-            print(f"  --> YOUR PRICE: {format_isk(gap_price)}")
+        if modules.empty:
+            print(f"\nNo mutated {module_name}s found in current contracts!")
+            return
+
+        print(f"\nFound {len(modules)} mutated {module_name} contracts total")
+
+        # Calculate DPS difference from yours for all items
+        modules = modules.copy()
+        modules['dps_diff_pct'] = ((modules['dps_multiplier'] / my_dps_mult) - 1) * 100
+
+        # Sweetspot tier: -0.2% to 0% DPS (greedy competitive pricing)
+        sweetspot = modules[(modules['dps_diff_pct'] >= -0.2) & (modules['dps_diff_pct'] < 0)].sort_values('price')
+
+        # Items better than yours (competition)
+        better = modules[modules['dps_diff_pct'] >= 0].sort_values('price')
+
+        # Items worse than sweetspot (much worse than yours)
+        worse = modules[modules['dps_diff_pct'] < -0.2].sort_values('price')
+
+        # Display sweetspot tier
+        print(f"\n{'='*60}")
+        print("SWEETSPOT TIER (-0.2% to 0% DPS) - Your competition")
+        print(f"{'='*60}")
+        if not sweetspot.empty:
+            print(f"{'Price':>12} | {'DPS':>8} | {'Diff':>6} | {'Dmg':>6} | {'ROF':>6} | {'CPU':>5} | Source")
+            print("-" * 85)
+            for _, row in sweetspot.iterrows():
+                price_str = format_isk(row['price'])
+                print(f"{price_str:>12} | {row['dps_multiplier']:.4f} | {row['dps_diff_pct']:+.2f}% | {row['damage_modifier']:.3f} | {row['rof_bonus_pct']:.2f}% | {row['cpu']:>5.1f} | {row['source_name']}")
+            print("-" * 85)
+            print(f"Count: {len(sweetspot)} | Lowest: {format_isk(sweetspot['price'].min())} | Median: {format_isk(sweetspot['price'].median())}")
         else:
-            print(f"\nOnly 1 item in tier - price at: {format_isk(competitive_price * 0.95)}")
+            print("No items in sweetspot tier - you may be at the top!")
 
-    elif not better.empty:
-        # No sweetspot items, price just below the cheapest better item
-        print(f"Competitive: {format_isk(better['price'].min() * 0.95)}")
-        print("(No items in your tier - pricing below competition)")
-    else:
-        print("You're at the top! Price as high as you want.")
+        # Display better items (brief)
+        print(f"\n{'='*60}")
+        print("BETTER THAN YOU (0%+ DPS)")
+        print(f"{'='*60}")
+        if not better.empty:
+            for _, row in better.head(5).iterrows():
+                price_str = format_isk(row['price'])
+                print(f"{price_str:>12} | DPS {row['dps_multiplier']:.4f} ({row['dps_diff_pct']:+.2f}%) | CPU {row['cpu']:.1f} | {row['source_name']}")
+            if len(better) > 5:
+                print(f"... and {len(better) - 5} more")
+            print(f"Cheapest better item: {format_isk(better['price'].min())}")
+        else:
+            print("No items better than yours - you're at the top!")
+
+        # Pricing recommendation - XGBoost ML prediction
+        print(f"\n{'='*60}")
+        print("PRICING RECOMMENDATION (XGBoost ML Model)")
+        print(f"{'='*60}")
+
+        # Load or train the XGBoost model on-demand
+        try:
+            constants = load_constants()
+            training_days = constants.get('models', {}).get('find_prices_training_days', 180)
+            max_age = constants.get('models', {}).get('max_model_age_days', 10)
+        except Exception:
+            training_days = 180
+            max_age = 10
+
+        print(f"\nLoading {args.module} price model ({training_days} days of training data)...")
+        model_info = get_or_train_model(args.module, training_days, max_age_days=max_age, verbose=True)
+
+        if model_info is None:
+            print("  ERROR: Could not load or train XGBoost model")
+            print("  Falling back to market comparison...")
+            # Fallback to gap pricing
+            if not sweetspot.empty:
+                sorted_prices = sweetspot['price'].sort_values().values
+                if len(sorted_prices) >= 2:
+                    gap_price = (sorted_prices[0] + sorted_prices[1]) / 2
+                    print(f"  Gap price: {format_isk(gap_price)}")
+                else:
+                    print(f"  Competitive: {format_isk(sorted_prices[0])}")
+            elif not better.empty:
+                print(f"  Below competition: {format_isk(better['price'].min() * 0.95)}")
+        else:
+            # Predict price using XGBoost
+            # Convert ROF bonus back to multiplier for model
+            rof_multiplier = 1 - (rof_bonus / 100)
+            features = {
+                'damage_modifier': damage_mod,
+                'rof_multiplier': rof_multiplier,
+                'cpu': cpu,
+            }
+            predicted_price = predict_with_model(model_info, features)
+
+            print(f"\n  Model R² Score: {model_info.r2_score:.3f}")
+            print(f"  Model trained on: {model_info.n_contracts} contracts")
+            print(f"  Model age: {model_info.age_days:.1f} days")
+
+            print(f"\n  YOUR STATS:")
+            print(f"    Damage: {damage_mod:.3f}x | ROF: {rof_bonus:.2f}% | CPU: {cpu:.2f} tf")
+            print(f"    DPS Multiplier: {my_dps_mult:.4f}")
+
+            print(f"\n  --> RECOMMENDED PRICE: {format_isk(predicted_price)}")
+
+            # Compare with market
+            if not better.empty:
+                cheapest_better = better['price'].min()
+                if predicted_price > cheapest_better:
+                    print(f"\n  NOTE: Better items available at {format_isk(cheapest_better)}")
+                    print(f"        Consider pricing closer to {format_isk(cheapest_better * 0.95)} for faster sale")
+                else:
+                    print(f"\n  Cheapest better item: {format_isk(cheapest_better)} (your predicted price is competitive)")
+
+            if not sweetspot.empty:
+                median_similar = sweetspot['price'].median()
+                print(f"  Similar items median: {format_isk(median_similar)}")
 
 
 if __name__ == '__main__':

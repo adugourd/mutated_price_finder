@@ -31,6 +31,7 @@ ATTR_DDA_DAMAGE = _attributes['dda_damage']
 ATTR_SHIELD_CAP = _attributes['shield_cap']
 ATTR_CAP_CAPACITY = _attributes['cap_capacity']
 ATTR_MISSILE_DAMAGE = _attributes['missile_damage']
+ATTR_POWER = _attributes['power']
 
 # Simulation parameters
 NUM_SAMPLES = _constants['simulation']['num_samples']
@@ -324,11 +325,11 @@ def calc_cap_battery_success_rate(target: RollTarget) -> SuccessResult:
     # Sellable = rolled cap > base cap
     primary_success = rolled_cap > base_cap
 
-    # CPU catastrophe
-    base_cpu = target.base_stats.get(ATTR_CPU, 42)
-    rolled_cpu = base_cpu * rolls[ATTR_CPU]
-    cpu_catastrophe_threshold = np.percentile(rolled_cpu, CATASTROPHE_PERCENTILE)
-    secondary_ok = rolled_cpu < cpu_catastrophe_threshold
+    # Powergrid catastrophe (more important than CPU for cap battery pricing)
+    base_power = target.base_stats.get(ATTR_POWER, 280)
+    rolled_power = base_power * rolls[ATTR_POWER]
+    power_catastrophe_threshold = np.percentile(rolled_power, CATASTROPHE_PERCENTILE)
+    secondary_ok = rolled_power < power_catastrophe_threshold
 
     combined_success = primary_success & secondary_ok
 

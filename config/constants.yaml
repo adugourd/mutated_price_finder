@@ -45,3 +45,14 @@ risk:
 
   # Default bankroll for risk analysis
   default_bankroll: 1_000_000_000
+
+models:
+  # Directory for trained XGBoost models (relative to project root)
+  model_dir: "models"
+
+  # Max age before retraining (days)
+  max_model_age_days: 10
+
+  # Default training days by use case
+  find_prices_training_days: 180
+  roi_calculator_training_days: 5

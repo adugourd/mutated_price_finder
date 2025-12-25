@@ -16,6 +16,9 @@ venv/
 # Large data files
 *.csv
 
+# Trained models (regenerated as needed)
+models/*.pkl
+
 # IDE
 .vscode/
 .idea/

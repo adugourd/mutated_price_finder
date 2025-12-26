@@ -3,6 +3,8 @@ XGBoost model lifecycle management.
 
 Handles loading, saving, and staleness checking for trained XGBoost models.
 Models are stored with metadata for automatic retraining when stale.
+
+Uses joblib for model serialization (more robust than pickle for sklearn/xgboost).
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Any
+
+import joblib
 
 from src.config.loader import load_constants, PROJECT_ROOT
 from src.models.training import (
@@ -59,13 +63,18 @@ def _get_model_dir() -> Path:
 
 
 def _get_model_path(module_type: str, days: int) -> Path:
-    """Get the path for a model file."""
+    """Get the path for a model file (joblib format)."""
+    return _get_model_dir() / f"{module_type}_{days}d.joblib"
+
+
+def _get_legacy_model_path(module_type: str, days: int) -> Path:
+    """Get the path for a legacy pickle model file."""
     return _get_model_dir() / f"{module_type}_{days}d.pkl"
 
 
 def save_model(result: TrainingResult) -> Path:
     """
-    Save a trained model to disk.
+    Save a trained model to disk using joblib.
 
     Args:
         result: TrainingResult from training
@@ -87,8 +96,13 @@ def save_model(result: TrainingResult) -> Path:
         'feature_ranges': result.feature_ranges,
     }
 
-    with open(model_path, 'wb') as f:
-        pickle.dump(data, f)
+    # Use joblib with compression for better performance
+    joblib.dump(data, model_path, compress=3)
+
+    # Remove legacy pickle file if it exists
+    legacy_path = _get_legacy_model_path(result.module_type, result.days)
+    if legacy_path.exists():
+        legacy_path.unlink()
 
     return model_path
 
@@ -96,6 +110,9 @@ def save_model(result: TrainingResult) -> Path:
 def load_model(module_type: str, days: int) -> ModelInfo | None:
     """
     Load a trained model from disk.
+
+    Supports both joblib (new) and pickle (legacy) formats.
+    Legacy pickle files are automatically migrated to joblib on load.
 
     Args:
         module_type: Type of module (e.g., 'capbat', 'gyro')
@@ -105,15 +122,32 @@ def load_model(module_type: str, days: int) -> ModelInfo | None:
         ModelInfo if model exists, None otherwise
     """
     model_path = _get_model_path(module_type, days)
+    legacy_path = _get_legacy_model_path(module_type, days)
 
-    if not model_path.exists():
+    data = None
+    needs_migration = False
+
+    # Try loading joblib format first
+    if model_path.exists():
+        try:
+            data = joblib.load(model_path)
+        except Exception:
+            pass
+
+    # Fall back to legacy pickle format
+    if data is None and legacy_path.exists():
+        try:
+            with open(legacy_path, 'rb') as f:
+                data = pickle.load(f)
+            needs_migration = True
+        except Exception:
+            pass
+
+    if data is None:
         return None
 
     try:
-        with open(model_path, 'rb') as f:
-            data = pickle.load(f)
-
-        return ModelInfo(
+        model_info = ModelInfo(
             model=data['model'],
             feature_names=data['feature_names'],
             r2_score=data['r2_score'],
@@ -124,13 +158,20 @@ def load_model(module_type: str, days: int) -> ModelInfo | None:
             module_type=data['module_type'],
             feature_ranges=data.get('feature_ranges'),  # Backwards compatible
         )
+
+        # Migrate legacy pickle to joblib
+        if needs_migration:
+            joblib.dump(data, model_path, compress=3)
+            legacy_path.unlink()
+
+        return model_info
     except Exception:
         return None
 
 
 def model_exists(module_type: str, days: int) -> bool:
-    """Check if a model file exists."""
-    return _get_model_path(module_type, days).exists()
+    """Check if a model file exists (joblib or legacy pickle)."""
+    return _get_model_path(module_type, days).exists() or _get_legacy_model_path(module_type, days).exists()
 
 
 def get_model_age(module_type: str, days: int) -> float | None:
@@ -242,47 +283,256 @@ def list_available_models() -> list[dict]:
     """
     model_dir = _get_model_dir()
     models = []
+    seen = set()  # Track seen (module_type, days) to avoid duplicates
 
-    for model_path in model_dir.glob("*.pkl"):
-        try:
-            # Parse filename: {module_type}_{days}d.pkl
-            name = model_path.stem
-            parts = name.rsplit('_', 1)
-            if len(parts) != 2:
+    # Check both joblib and legacy pickle files
+    for pattern in ("*.joblib", "*.pkl"):
+        for model_path in model_dir.glob(pattern):
+            try:
+                # Parse filename: {module_type}_{days}d.{ext}
+                name = model_path.stem
+                parts = name.rsplit('_', 1)
+                if len(parts) != 2:
+                    continue
+
+                module_type = parts[0]
+                days_str = parts[1].rstrip('d')
+                days = int(days_str)
+
+                # Skip if we've already seen this model
+                key = (module_type, days)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                info = load_model(module_type, days)
+                if info:
+                    models.append({
+                        'module_type': module_type,
+                        'days': days,
+                        'age_days': info.age_days,
+                        'r2_score': info.r2_score,
+                        'n_contracts': info.n_contracts,
+                        'path': str(_get_model_path(module_type, days)),
+                    })
+            except Exception:
                 continue
-
-            module_type = parts[0]
-            days_str = parts[1].rstrip('d')
-            days = int(days_str)
-
-            info = load_model(module_type, days)
-            if info:
-                models.append({
-                    'module_type': module_type,
-                    'days': days,
-                    'age_days': info.age_days,
-                    'r2_score': info.r2_score,
-                    'n_contracts': info.n_contracts,
-                    'path': str(model_path),
-                })
-        except Exception:
-            continue
 
     return models
 
 
 def delete_model(module_type: str, days: int) -> bool:
     """
-    Delete a trained model.
+    Delete a trained model (both joblib and legacy pickle formats).
 
     Returns:
         True if model was deleted, False if it didn't exist
     """
+    deleted = False
     model_path = _get_model_path(module_type, days)
+    legacy_path = _get_legacy_model_path(module_type, days)
+
     if model_path.exists():
         model_path.unlink()
-        return True
-    return False
+        deleted = True
+    if legacy_path.exists():
+        legacy_path.unlink()
+        deleted = True
+
+    return deleted
+
+
+def get_feature_importance(model_info: ModelInfo) -> dict[str, float]:
+    """
+    Get feature importance scores from the model.
+
+    Uses the model's built-in feature importance (gain-based for XGBoost).
+
+    Args:
+        model_info: Trained model
+
+    Returns:
+        Dict mapping feature names to importance scores (normalized to sum to 1)
+    """
+    importance = model_info.model.feature_importances_
+    total = sum(importance)
+
+    if total == 0:
+        return {name: 0.0 for name in model_info.feature_names}
+
+    return {
+        name: float(imp / total)
+        for name, imp in zip(model_info.feature_names, importance)
+    }
+
+
+def print_feature_importance(model_info: ModelInfo) -> None:
+    """
+    Print formatted feature importance analysis.
+
+    Args:
+        model_info: Trained model with feature importances
+    """
+    importance = get_feature_importance(model_info)
+
+    print("\nFeature Importance:")
+    print("-" * 45)
+
+    # Sort by importance (highest first)
+    sorted_features = sorted(importance.items(), key=lambda x: x[1], reverse=True)
+
+    for name, imp in sorted_features:
+        bar_length = int(imp * 30)
+        bar = "█" * bar_length
+        print(f"  {name:20s} {imp:6.1%} {bar}")
+
+
+@dataclass
+class PredictionWithConfidence:
+    """Prediction result with confidence interval."""
+    prediction: float  # Point prediction (median/mean)
+    lower: float  # Lower bound of confidence interval
+    upper: float  # Upper bound of confidence interval
+    confidence_level: float  # e.g., 0.80 for 80% CI
+
+    def __str__(self) -> str:
+        from src.formatters.isk import format_isk
+        return (
+            f"{format_isk(self.prediction)} "
+            f"[{format_isk(self.lower)} - {format_isk(self.upper)}] "
+            f"({self.confidence_level:.0%} CI)"
+        )
+
+
+def predict_with_confidence(
+    model_info: ModelInfo,
+    features: dict[str, float],
+    confidence_level: float = 0.80,
+) -> PredictionWithConfidence:
+    """
+    Predict price with confidence interval.
+
+    Uses the model's MAE to estimate prediction uncertainty.
+    The confidence interval is based on the historical prediction error.
+
+    Args:
+        model_info: Trained model
+        features: Feature values for prediction
+        confidence_level: Confidence level (0.0-1.0), default 0.80 for 80% CI
+
+    Returns:
+        PredictionWithConfidence with point estimate and bounds
+    """
+    import numpy as np
+
+    # Get point prediction
+    point_pred = predict_price(model_info, features)
+
+    # Estimate uncertainty based on MAE
+    # For a rough confidence interval, we use:
+    # - 80% CI: ~1.28 standard deviations
+    # - 90% CI: ~1.645 standard deviations
+    # - 95% CI: ~1.96 standard deviations
+    # We approximate std from MAE as: std ≈ MAE * 1.25 (for normal distribution)
+
+    z_scores = {
+        0.80: 1.28,
+        0.90: 1.645,
+        0.95: 1.96,
+        0.99: 2.576,
+    }
+    z = z_scores.get(confidence_level, 1.28)
+
+    # Estimate standard deviation from MAE
+    estimated_std = model_info.mae * 1.25
+
+    # Calculate bounds (use percentage-based for prices which are always positive)
+    # This creates a multiplicative interval that works better for price data
+    relative_error = estimated_std / max(point_pred, 1)
+    multiplier = np.exp(z * relative_error)
+
+    lower = point_pred / multiplier
+    upper = point_pred * multiplier
+
+    return PredictionWithConfidence(
+        prediction=point_pred,
+        lower=lower,
+        upper=upper,
+        confidence_level=confidence_level,
+    )
+
+
+def predict_range_with_confidence(
+    model_info: ModelInfo,
+    n_samples: int = 10000,
+    confidence_level: float = 0.80,
+) -> dict:
+    """
+    Predict price range using Monte Carlo simulation with confidence bounds.
+
+    Samples from the observed feature ranges and predicts prices,
+    then computes percentiles for the price distribution.
+
+    Args:
+        model_info: Trained model with feature_ranges
+        n_samples: Number of Monte Carlo samples
+        confidence_level: Confidence level for the interval
+
+    Returns:
+        Dict with 'median', 'lower', 'upper', 'mean', 'std' keys
+    """
+    import numpy as np
+
+    if model_info.feature_ranges is None:
+        return None
+
+    # Generate random samples within feature ranges
+    samples = {}
+    for name in model_info.feature_names:
+        if name not in model_info.feature_ranges:
+            return None
+        min_val, max_val = model_info.feature_ranges[name]
+        samples[name] = np.random.uniform(min_val, max_val, n_samples)
+
+    # Build feature matrix
+    X = np.column_stack([samples[name] for name in model_info.feature_names])
+
+    # Predict
+    y_pred_log = model_info.model.predict(X)
+    prices = np.expm1(y_pred_log)
+    prices = np.maximum(prices, 0)
+
+    # Calculate percentiles
+    alpha = (1 - confidence_level) / 2
+    lower_pct = alpha * 100
+    upper_pct = (1 - alpha) * 100
+
+    return {
+        'median': float(np.median(prices)),
+        'mean': float(np.mean(prices)),
+        'std': float(np.std(prices)),
+        'lower': float(np.percentile(prices, lower_pct)),
+        'upper': float(np.percentile(prices, upper_pct)),
+        'min': float(np.min(prices)),
+        'max': float(np.max(prices)),
+        'confidence_level': confidence_level,
+    }
+
+
+def get_feature_importance_summary(model_info: ModelInfo) -> str:
+    """
+    Get a single-line summary of feature importance.
+
+    Args:
+        model_info: Trained model
+
+    Returns:
+        String like "damage_modifier: 45%, rof_multiplier: 35%, cpu: 20%"
+    """
+    importance = get_feature_importance(model_info)
+    sorted_features = sorted(importance.items(), key=lambda x: x[1], reverse=True)
+    parts = [f"{name}: {imp:.0%}" for name, imp in sorted_features]
+    return ", ".join(parts)
 
 
 @dataclass

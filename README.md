@@ -23,13 +23,15 @@ This independence property is key: each attribute rolls separately, meaning we c
 - Simulates 100,000 random rolls within observed stat ranges
 - Predicts price for each simulated roll using XGBoost
 - Returns full price distribution (mean, median, percentiles) for ROI calculation
+- Includes confidence intervals for uncertainty quantification
+- Feature importance analysis shows which stats drive pricing
 - Models trained on-demand and cached for reuse
 
 ### Model Configuration
 - `find_prices.py` uses 180-day models (6 months of data, higher accuracy)
 - `roi_calculator.py` uses 5-day models (faster training for batch analysis)
 - Models auto-retrain when older than 10 days
-- Supported modules: `capbat`, `gyro`, `heatsink`, `magstab`, `bcs`, `entropic`
+- Supported modules: `capbat`, `gyro`, `heatsink`, `magstab`, `bcs`, `entropic`, `dda`
 
 ### Risk Analysis (Binomial Distribution)
 - Models portfolio outcomes given finite bankroll
@@ -82,10 +84,38 @@ Republic Fleet Large Cap Battery + Gravid
 ### Price Finder (`find_prices.py`)
 Finds equivalent or better items and recommends pricing using XGBoost ML prediction. Models are trained on-demand when first requested for a module type.
 
+**Supported Module Types:** `capbat`, `gyro`, `heatsink`, `magstab`, `bcs`, `entropic`, `dda`
+
+#### Examples for Each Module Type
+
 ```bash
-python find_prices.py -m capbat --cap 2000 --cpu 45 --pg 320 --resist -28  # Cap batteries
-python find_prices.py -m magstab -d 1.139 -r 13.01 -c 28.89                # Mag stabs
-python find_prices.py -m gyro -d 1.145 -r 12.49 -c 18.25                   # Gyrostabilizers
+# Large Cap Battery (capbat)
+# Args: --cap (GJ), --cpu (tf), --pg (MW), --resist (%)
+python find_prices.py -m capbat --cap 2000 --cpu 45 --pg 320 --resist -28
+
+# Gyrostabilizer (gyro) - Projectile weapons
+# Args: -d/--damage-mod (multiplier), -r/--rof-bonus (%), -c/--cpu (tf)
+python find_prices.py -m gyro -d 1.145 -r 12.49 -c 18.25
+
+# Heat Sink (heatsink) - Energy weapons
+# Args: -d/--damage-mod (multiplier), -r/--rof-bonus (%), -c/--cpu (tf)
+python find_prices.py -m heatsink -d 1.12 -r 10.5 -c 28.5
+
+# Magnetic Field Stabilizer (magstab) - Hybrid weapons
+# Args: -d/--damage-mod (multiplier), -r/--rof-bonus (%), -c/--cpu (tf)
+python find_prices.py -m magstab -d 1.139 -r 13.01 -c 28.89
+
+# Ballistic Control System (bcs) - Missiles
+# Args: -d/--damage-mod (multiplier), -r/--rof-bonus (%), -c/--cpu (tf)
+python find_prices.py -m bcs -d 1.105 -r 10.8 -c 38.5
+
+# Entropic Radiation Sink (entropic) - Entropic Disintegrators
+# Args: -d/--damage-mod (multiplier), -r/--rof-bonus (%), -c/--cpu (tf)
+python find_prices.py -m entropic -d 1.12 -r 8.5 -c 33.0
+
+# Drone Damage Amplifier (dda) - Drones
+# Args: -b/--damage-bonus (%), -c/--cpu (tf)
+python find_prices.py -m dda -b 25.5 -c 28.0
 ```
 
 **Example Output:**
@@ -114,7 +144,16 @@ python train_price_model.py --list-types                 # Show supported module
 python train_price_model.py --list-models                # Show trained models
 ```
 
-**Supported Modules:** `capbat`, `gyro`, `heatsink`, `magstab`, `bcs`, `entropic`
+**Supported Modules:** `capbat`, `gyro`, `heatsink`, `magstab`, `bcs`, `entropic`, `dda`
+
+### Model Backtesting
+Validate model accuracy using walk-forward validation on historical data.
+
+```bash
+python -c "from src.analysis.backtest import backtest_model; print(backtest_model('gyro'))"
+```
+
+Metrics include MAE, MAPE, R² score, directional accuracy, and percentage of predictions within 20%/50% of actual.
 
 ### Supporting Tools
 - `contract_turnover.py` - Market velocity analysis (identifies high-demand modules)
@@ -131,12 +170,13 @@ python train_price_model.py --list-models                # Show trained models
 5. Uses Monte Carlo simulation for ROI expected value calculation
 
 **Model Management:**
-- Models stored in `models/` directory as pickle files
+- Models stored in `models/` directory as joblib files (compressed)
 - Auto-retrain when models exceed 10 days age
 - `find_prices.py` uses 180-day models (higher accuracy)
 - `roi_calculator.py` uses 5-day models (faster training for batch analysis)
+- Feature importance and confidence intervals available for all predictions
 
-**Key Dependencies:** `pandas`, `numpy`, `scipy`, `requests`, `xgboost`, `scikit-learn`
+**Key Dependencies:** `pandas`, `numpy`, `scipy`, `requests`, `xgboost`, `scikit-learn`, `joblib`
 
 ## Installation
 
